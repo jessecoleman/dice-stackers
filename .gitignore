@@ -22,8 +22,8 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Game data (runtime state, not source)
-/data/games/*.json
+# Game data (replaced by Cloudflare KV)
+/data/
 
 # Claude Code local settings
 .claude/

@@ -1,28 +1,12 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
 import type { GameState } from '$lib/gameLogic';
 
-const DATA_DIR = path.join(process.cwd(), 'data', 'games');
-
-function gamePath(roomId: string): string {
-  return path.join(DATA_DIR, `${roomId}.json`);
+export async function loadGame(kv: KVNamespace, roomId: string): Promise<GameState | null> {
+  const text = await kv.get(`game:${roomId}`);
+  return text ? (JSON.parse(text) as GameState) : null;
 }
 
-export async function loadGame(roomId: string): Promise<GameState | null> {
-  try {
-    const text = await readFile(gamePath(roomId), 'utf-8');
-    return JSON.parse(text) as GameState;
-  } catch {
-    return null;
-  }
-}
-
-export async function saveGame(state: GameState): Promise<void> {
-  if (!existsSync(DATA_DIR)) {
-    await mkdir(DATA_DIR, { recursive: true });
-  }
-  await writeFile(gamePath(state.roomId), JSON.stringify(state));
+export async function saveGame(kv: KVNamespace, state: GameState): Promise<void> {
+  await kv.put(`game:${state.roomId}`, JSON.stringify(state));
 }
 
 export function generateRoomId(): string {
