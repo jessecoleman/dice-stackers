@@ -27,6 +27,7 @@
 	"dependencies": {
 		"@threlte/core": "^8.5.9",
 		"@threlte/extras": "^9.14.6",
-		"three": "^0.183.2"
+		"three": "^0.183.2",
+		"wrangler": "^4.83.0"
 	}
 }
