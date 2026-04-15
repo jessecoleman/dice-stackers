@@ -2,7 +2,7 @@ name = "dice-stackers"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 main = ".svelte-kit/cloudflare/_worker.js"
-assets = { directory = ".svelte-kit/cloudflare" }
+assets = { directory = ".svelte-kit/cloudflare", binding = "ASSETS" }
 
 [[kv_namespaces]]
 binding = "GAME_STORE"
