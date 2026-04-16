@@ -1,8 +1,31 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { crossfade, fade, fly } from 'svelte/transition';
+  import { crossfade, fade } from 'svelte/transition';
   import { cubicInOut } from 'svelte/easing';
+
+  // Continuously reads the parent element's computed transform and applies
+  // the matrix inverse to `node`, so the child is visually unaffected by the
+  // parent's crossfade squash while its own transition runs independently.
+  function counterParentTransform(node: HTMLElement) {
+    const parent = node.parentElement!;
+    let rafId: number;
+
+    function sync() {
+      const t = getComputedStyle(parent).transform;
+      if (t && t !== 'none') {
+        const m = new DOMMatrix(t);
+        const inv = m.inverse();
+        node.style.transform = `matrix(${inv.a},${inv.b},${inv.c},${inv.d},${inv.e},${inv.f})`;
+      } else {
+        node.style.transform = '';
+      }
+      rafId = requestAnimationFrame(sync);
+    }
+
+    sync();
+    return { destroy() { cancelAnimationFrame(rafId); } };
+  }
 
   const [send, receive] = crossfade({ duration: 450, easing: cubicInOut });
   import { Canvas } from '@threlte/core';
@@ -293,14 +316,16 @@
     {#if resultMinimized}
       <div
         class="result-minimized"
-        in:fly={{ y: 20, duration: 350, easing: cubicInOut }}
-        out:fly={{ y: 20, duration: 300, easing: cubicInOut }}
+        in:receive={{ key: 'result' }}
+        out:send={{ key: 'result' }}
       >
-        <span
-          class="minimized-title"
-          in:receive={{ key: 'result-title' }}
-          out:send={{ key: 'result-title' }}
-        >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</span>
+        <div class="counter-wrap" use:counterParentTransform>
+          <span
+            class="minimized-title"
+            in:receive={{ key: 'result-title' }}
+            out:send={{ key: 'result-title' }}
+          >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</span>
+        </div>
         <span class="minimized-scores">{score1} – {score2}</span>
         <button class="minimized-restore" onclick={() => resultMinimized = false}>View Results</button>
       </div>
@@ -308,15 +333,17 @@
       <div class="overlay" transition:fade={{ duration: 300 }}>
         <div
           class="result-card"
-          in:fly={{ y: 40, duration: 400, easing: cubicInOut }}
-          out:fly={{ y: 40, duration: 300, easing: cubicInOut }}
+          in:receive={{ key: 'result' }}
+          out:send={{ key: 'result' }}
         >
           <button class="minimize-btn" onclick={() => resultMinimized = true} title="View board">⊟</button>
-          <div
-            class="result-title"
-            in:receive={{ key: 'result-title' }}
-            out:send={{ key: 'result-title' }}
-          >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</div>
+          <div class="counter-wrap" use:counterParentTransform>
+            <div
+              class="result-title"
+              in:receive={{ key: 'result-title' }}
+              out:send={{ key: 'result-title' }}
+            >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</div>
+          </div>
 
           <!-- Score tables side by side -->
           <div class="result-tables">
@@ -766,6 +793,13 @@
     gap: 20px;
     max-width: min(680px, 92vw);
     width: 100%;
+  }
+
+  /* Wrapper that receives the counter-transform action — transparent to layout */
+  .counter-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .minimize-btn {
