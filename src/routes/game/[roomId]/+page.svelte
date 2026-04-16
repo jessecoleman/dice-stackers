@@ -26,7 +26,7 @@
   import RulesModal from '$lib/components/RulesModal.svelte';
   import NameModal from '$lib/components/NameModal.svelte';
   import { gameStore, suits } from '$lib/gameStore.svelte';
-  import { playYourTurnChime } from '$lib/utils/sounds';
+  import { playYourTurnChime, playPlayerJoined } from '$lib/utils/sounds';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -106,6 +106,7 @@
   $effect(() => {
     const newRoomId = gameStore.rematchRoomId;
     if (newRoomId && gameStore.gamePhase === 'game-over') {
+      playPlayerJoined();
       const newSeat = seat === 1 ? 2 : seat === 2 ? 1 : null;
       const query = newSeat ? `?seat=${newSeat}` : '';
       goto(`/game/${newRoomId}${query}`);
@@ -178,7 +179,10 @@
   // ── P2 join signal ─────────────────────────────────────────────────────────
   // Seat 2 calls joinGame() on mount so P1 gets notified via polling.
   $effect(() => {
-    if (seat === 2) gameStore.joinGame();
+    if (seat === 2) {
+      gameStore.joinGame();
+      playPlayerJoined();
+    }
   });
 
   // ── Name modal ────────────────────────────────────────────────────────────
@@ -239,6 +243,7 @@
     if (seat === 1 && gameStore.player2Joined) {
       showShareLink = false;
       showJoinToast = true;
+      playPlayerJoined();
       const t = setTimeout(() => { showJoinToast = false; }, 3000);
       return () => clearTimeout(t);
     }
