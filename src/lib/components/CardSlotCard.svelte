@@ -50,8 +50,8 @@
     <T.Mesh geometry={cardGeo} rotation={[-Math.PI / 2, 0, 0]}>
       <T.MeshStandardMaterial
         color={suitColor}
-        roughness={0.45}
-        metalness={0.05}
+        roughness={0.35}
+        metalness={0.55}
         emissive={isLogHovered ? '#ffffff' : '#000000'}
         emissiveIntensity={isLogHovered ? 0.7 : 0}
       />
