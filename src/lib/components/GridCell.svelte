@@ -1,5 +1,6 @@
 <script lang="ts">
   import { T } from '@threlte/core';
+  import * as THREE from 'three';
   import Die3D from './Die3D.svelte';
   import { gameStore } from '$lib/gameStore.svelte';
 
@@ -36,10 +37,39 @@
     gameStore.seat === null || gameStore.seat === gameStore.currentPlayer
   );
 
-  const tileBaseColor = '#c8a96e';
-  const tileAltColor  = '#b8905a';
+  const tileBaseColor = '#9a7040';
+  const tileAltColor  = '#7a5c2e';
   const isAlt = $derived((row + col) % 2 === 1);
   const tileColor = $derived(isAlt ? tileAltColor : tileBaseColor);
+
+  // Rounded-rectangle tile geometry (shape in XY plane, rotated flat onto XZ)
+  const TILE_H      = 0.12;
+  const CORNER_R    = 0.14;
+  function makeRoundedTile(): THREE.ExtrudeGeometry {
+    const s = CELL_SIZE / 2;
+    const r = CORNER_R;
+    const shape = new THREE.Shape();
+    shape.moveTo(-s + r, -s);
+    shape.lineTo( s - r, -s);
+    shape.quadraticCurveTo( s, -s,  s, -s + r);
+    shape.lineTo( s,  s - r);
+    shape.quadraticCurveTo( s,  s,  s - r,  s);
+    shape.lineTo(-s + r,  s);
+    shape.quadraticCurveTo(-s,  s, -s,  s - r);
+    shape.lineTo(-s, -s + r);
+    shape.quadraticCurveTo(-s, -s, -s + r, -s);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: TILE_H, bevelEnabled: false });
+    // Extrusion goes in -Z after rotating -90° around X, so top face ends up at Y=0
+    return geo;
+  }
+
+  let tileGeo = $state<THREE.ExtrudeGeometry | null>(null);
+  $effect(() => {
+    const g = makeRoundedTile();
+    tileGeo = g;
+    return () => g.dispose();
+  });
 
   function handleClick(e: any) {
     e.stopPropagation();
@@ -48,17 +78,18 @@
 </script>
 
 <T.Group position={[worldX, 0, worldZ]}>
-  <!-- Tile surface -->
-  <T.Mesh receiveShadow position={[0, 0, 0]} onclick={handleClick}>
-    <T.BoxGeometry args={[CELL_SIZE, 0.12, CELL_SIZE]} />
-    <T.MeshStandardMaterial color={tileColor} roughness={0.8} />
-  </T.Mesh>
-
-  <!-- Tile border -->
-  <T.Mesh position={[0, -0.02, 0]}>
-    <T.BoxGeometry args={[CELL_SIZE + 0.04, 0.08, CELL_SIZE + 0.04]} />
-    <T.MeshStandardMaterial color="#7a5c2e" roughness={1} />
-  </T.Mesh>
+  <!-- Rounded tile surface -->
+  {#if tileGeo}
+    <T.Mesh
+      receiveShadow
+      geometry={tileGeo}
+      position={[0, -0.06, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      onclick={handleClick}
+    >
+      <T.MeshStandardMaterial color={tileColor} roughness={0.55} />
+    </T.Mesh>
+  {/if}
 
   <!-- Stacked dice — non-interactive during die placement so clicks pass through -->
   {#each stack as die, i (die.id)}
