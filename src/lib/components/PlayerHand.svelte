@@ -62,8 +62,8 @@
       <button class="cancel-btn" onclick={() => gameStore.cancelTurn()}>Cancel</button>
     {/if}
     {#if !showBacks}
-      <button class="sort-btn" class:active={sortMode === 'suit-rank'} onclick={() => sortMode = sortMode === 'suit-rank' ? 'none' : 'suit-rank'}>S·R</button>
-      <button class="sort-btn" class:active={sortMode === 'rank-suit'} onclick={() => sortMode = sortMode === 'rank-suit' ? 'none' : 'rank-suit'}>R·S</button>
+      <button class="sort-btn" class:active={sortMode === 'suit-rank'} onclick={() => sortMode = sortMode === 'suit-rank' ? 'none' : 'suit-rank'}>Suit</button>
+      <button class="sort-btn" class:active={sortMode === 'rank-suit'} onclick={() => sortMode = sortMode === 'rank-suit' ? 'none' : 'rank-suit'}>Rank</button>
     {/if}
   </div>
 

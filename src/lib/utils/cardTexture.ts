@@ -9,10 +9,10 @@ const SUIT_SYMBOL: Record<string, string> = {
 };
 
 const SUIT_BG: Record<string, string> = {
-  red:    '#c0282b',
-  green:  '#1e6b3d',
-  yellow: '#9a5e0a',
-  blue:   '#2450be',
+  red:    '#e53e3e',
+  green:  '#38a169',
+  yellow: '#d69e2e',
+  blue:   '#3b82f6',
 };
 
 /**
@@ -104,9 +104,12 @@ export function createDieLabelTexture(value: number, textColor: string): THREE.C
   if (isLight) {
     grad.addColorStop(0, 'rgba(0,0,0,0.18)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, S, S);
+  } else {
+    grad.addColorStop(0, 'rgba(255,255,255,0.18)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
   }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, S, S);
 
   ctx.fillStyle = textColor;
   ctx.font = 'bold 92px Georgia, serif';
