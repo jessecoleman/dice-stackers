@@ -1,5 +1,6 @@
 <script lang="ts">
   import { T } from '@threlte/core';
+  import { RoundedBoxGeometry } from '@threlte/extras';
   import * as THREE from 'three';
   import GridCell from './GridCell.svelte';
   import CardStackSlot from './CardStackSlot.svelte';
@@ -24,19 +25,108 @@
     woodTex = t;
     return () => t.dispose();
   });
+
+  // ── Player-border corner geometry ────────────────────────────────────────────
+  // Strips are 0.38 wide (h=0.19). The two mixed corners need 45° triangles.
+  // Shape is defined in XY plane; rotation=[+π/2,0,0] maps shape-Y → world-Z
+  // and extrudes downward in world-Y so the surface sits at position_y=-0.01.
+  const h = 0.19;
+  function makeCornerTri(
+    v0: [number, number], v1: [number, number], v2: [number, number]
+  ): THREE.ExtrudeGeometry {
+    const shape = new THREE.Shape();
+    shape.moveTo(v0[0], v0[1]);
+    shape.lineTo(v1[0], v1[1]);
+    shape.lineTo(v2[0], v2[1]);
+    shape.closePath();
+    return new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false });
+  }
+
+  // near-left corner (cx=-3.56, cz=+3.56): near=white, left=black
+  //   diagonal: inner(+h,-h) → outer(-h,+h)
+  let nlWhiteGeo = $state<THREE.ExtrudeGeometry | null>(null);
+  let nlBlackGeo = $state<THREE.ExtrudeGeometry | null>(null);
+  // far-right corner (cx=+3.56, cz=-3.56): far=black, right=white
+  //   diagonal: inner(-h,+h) → outer(+h,-h)
+  let frWhiteGeo = $state<THREE.ExtrudeGeometry | null>(null);
+  let frBlackGeo = $state<THREE.ExtrudeGeometry | null>(null);
+
+  $effect(() => {
+    const nlw = makeCornerTri([-h, h], [ h, h], [ h,-h]); // outer,near-right,inner
+    const nlb = makeCornerTri([-h, h], [-h,-h], [ h,-h]); // outer,left-far,inner
+    const frw = makeCornerTri([-h, h], [ h,-h], [ h, h]); // inner,outer,right-side
+    const frb = makeCornerTri([-h, h], [ h,-h], [-h,-h]); // inner,outer,far-side
+    nlWhiteGeo = nlw; nlBlackGeo = nlb;
+    frWhiteGeo = frw; frBlackGeo = frb;
+    return () => { nlw.dispose(); nlb.dispose(); frw.dispose(); frb.dispose(); };
+  });
 </script>
 
 <!-- Board base — extended to sit under the card slots -->
 <T.Mesh position={[0, -0.12, 0]} receiveShadow>
-  <T.BoxGeometry args={[7.5, 0.18, 7.5]} />
+  <RoundedBoxGeometry args={[7.5, 0.18, 7.5]} radius={0.35} smoothness={4} />
   <T.MeshStandardMaterial map={woodTex ?? undefined} color="#5c3d1a" roughness={0.85} />
 </T.Mesh>
 
 <!-- Board legs / base trim -->
 <T.Mesh position={[0, -0.24, 0]}>
-  <T.BoxGeometry args={[7.2, 0.06, 7.2]} />
+  <RoundedBoxGeometry args={[7.2, 0.06, 7.2]} radius={0.3} smoothness={4} />
   <T.MeshStandardMaterial color="#3d2608" roughness={1} />
 </T.Mesh>
+
+<!-- Player-side border strips (shortened to 6.74 so corners don't overlap) -->
+<!-- P1 white: near + right -->
+<T.Mesh position={[0, -0.03, 3.56]}>
+  <T.BoxGeometry args={[6.74, 0.04, 0.38]} />
+  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+</T.Mesh>
+<T.Mesh position={[3.56, -0.03, 0]}>
+  <T.BoxGeometry args={[0.38, 0.04, 6.74]} />
+  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+</T.Mesh>
+<!-- P2 black: far + left -->
+<T.Mesh position={[0, -0.03, -3.56]}>
+  <T.BoxGeometry args={[6.74, 0.04, 0.38]} />
+  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+</T.Mesh>
+<T.Mesh position={[-3.56, -0.03, 0]}>
+  <T.BoxGeometry args={[0.38, 0.04, 6.74]} />
+  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+</T.Mesh>
+
+<!-- Same-colour corners: near-right (both white) and far-left (both black) -->
+<T.Mesh position={[3.56, -0.03, 3.56]}>
+  <T.BoxGeometry args={[0.38, 0.04, 0.38]} />
+  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+</T.Mesh>
+<T.Mesh position={[-3.56, -0.03, -3.56]}>
+  <T.BoxGeometry args={[0.38, 0.04, 0.38]} />
+  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+</T.Mesh>
+
+<!-- Mixed corners with 45° diagonal cut -->
+<!-- near-left (cx=-3.56, cz=+3.56): white near, black left -->
+{#if nlWhiteGeo}
+  <T.Mesh position={[-3.56, -0.01, 3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={nlWhiteGeo}>
+    <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+  </T.Mesh>
+{/if}
+{#if nlBlackGeo}
+  <T.Mesh position={[-3.56, -0.01, 3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={nlBlackGeo}>
+    <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+  </T.Mesh>
+{/if}
+<!-- far-right (cx=+3.56, cz=-3.56): black far, white right -->
+{#if frBlackGeo}
+  <T.Mesh position={[3.56, -0.01, -3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={frBlackGeo}>
+    <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+  </T.Mesh>
+{/if}
+{#if frWhiteGeo}
+  <T.Mesh position={[3.56, -0.01, -3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={frWhiteGeo}>
+    <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+  </T.Mesh>
+{/if}
 
 <!-- 3x3 grid cells -->
 {#each [0, 1, 2] as row}
