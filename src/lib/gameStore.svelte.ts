@@ -76,6 +76,9 @@ function createGameStore() {
     get pendingDiePlacement() { return serverState?.pendingDiePlacement ?? null; },
     get gamePhase() { return serverState?.phase ?? 'playing'; },
     get player2Joined() { return serverState?.player2Joined ?? false; },
+    get player1Name() { return serverState?.player1Name ?? 'Player 1'; },
+    get player2Name() { return serverState?.player2Name ?? 'Player 2'; },
+    playerName(p: 1 | 2) { return p === 1 ? (serverState?.player1Name ?? 'Player 1') : (serverState?.player2Name ?? 'Player 2'); },
     get eventLog() { return serverState?.eventLog ?? []; },
     get hoverHighlight() { return hoverHighlight; },
     setHoverHighlight(h: HoverHighlight) { hoverHighlight = h; },
@@ -142,6 +145,17 @@ function createGameStore() {
 
     async cancelTurn() {
       await sendAction({ type: 'CANCEL_PLAY' });
+    },
+
+    /** Save the seated player's display name to the server. */
+    async setName(name: string): Promise<void> {
+      if (!roomId || seat === null) return;
+      const res = await fetch(`/api/game/${roomId}/name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player: seat, name }),
+      });
+      if (res.ok) serverState = await res.json();
     },
 
     /** Called by seat-2 page on mount to signal P2 has joined. */

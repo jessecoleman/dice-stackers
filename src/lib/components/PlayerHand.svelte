@@ -2,6 +2,7 @@
   import Card from './Card.svelte';
   import { gameStore, type Card as CardType } from '$lib/gameStore.svelte';
 
+
   let { player, showBacks = false }: { player: 1 | 2; showBacks?: boolean } = $props();
 
   const hand     = $derived(player === 1 ? gameStore.player1Hand : gameStore.player2Hand);
@@ -30,7 +31,7 @@
     <span class="pip-die" class:pip-white={player === 2}>
       <span class="pip-dot"></span>
     </span>
-    Player {player}
+    {gameStore.playerName(player)}
     {#if isActive}<span class="turn-dot"></span>{/if}
     {#if isActive && !gameStore.pendingDiePlacement && gameStore.drawPile.length > 0}
       <button class="draw-btn" onclick={() => gameStore.drawToSix()}>Draw to 6</button>

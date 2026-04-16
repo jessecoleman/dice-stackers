@@ -50,6 +50,8 @@ export interface GameState {
   cardSlots: Record<string, Card[]>;
   pendingDiePlacement: { card: Card; edge: Edge; index: 0 | 1 | 2 } | null;
   player2Joined: boolean;
+  player1Name: string;
+  player2Name: string;
   eventLog: EventLogEntry[];
   createdAt: number;
   updatedAt: number;
@@ -108,6 +110,8 @@ export function createInitialState(roomId: string): GameState {
     cardSlots: emptySlots,
     pendingDiePlacement: null,
     player2Joined: false,
+    player1Name: 'Player 1',
+    player2Name: 'Player 2',
     eventLog: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),

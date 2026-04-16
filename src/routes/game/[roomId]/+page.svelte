@@ -7,6 +7,7 @@
   import PlayerScore from '$lib/components/PlayerScore.svelte';
   import EventLog from '$lib/components/EventLog.svelte';
   import RulesModal from '$lib/components/RulesModal.svelte';
+  import NameModal from '$lib/components/NameModal.svelte';
   import { gameStore, suits } from '$lib/gameStore.svelte';
   import type { PageData } from './$types';
 
@@ -89,6 +90,20 @@
     if (seat === 2) gameStore.joinGame();
   });
 
+  // ── Name modal ────────────────────────────────────────────────────────────
+  let showNameModal = $state(false);
+  $effect.pre(() => {
+    if (seat !== null && typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('player-name');
+      if (!saved) showNameModal = true;
+    }
+  });
+
+  async function handleNameSave(name: string) {
+    showNameModal = false;
+    await gameStore.setName(name);
+  }
+
   // ── Rules modal ───────────────────────────────────────────────────────────
   const RULES_KEY = 'rules-seen-v1';
   let showRules = $state(false);
@@ -137,7 +152,7 @@
 
   <!-- Last-turn banner -->
   {#if gameStore.gamePhase === 'last-turn'}
-    <div class="phase-banner">Last turn for Player {gameStore.currentPlayer}!</div>
+    <div class="phase-banner">Last turn for {gameStore.playerName(gameStore.currentPlayer)}!</div>
   {/if}
 
   <!-- Game-over overlay -->
@@ -145,14 +160,20 @@
     <div class="overlay">
       <div class="result-card">
         <div class="result-title">
-          {winner === null ? 'Draw!' : `Player ${winner} wins!`}
+          {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
         </div>
         <div class="result-scores">
-          <div class:result-winner={winner === 1}>Player 1 — {score1}</div>
-          <div class:result-winner={winner === 2}>Player 2 — {score2}</div>
+          <div class:result-winner={winner === 1}>{gameStore.player1Name} — {score1}</div>
+          <div class:result-winner={winner === 2}>{gameStore.player2Name} — {score2}</div>
         </div>
+        <a href="/" class="new-game-btn">New Game</a>
       </div>
     </div>
+  {/if}
+
+  <!-- Name modal -->
+  {#if showNameModal}
+    <NameModal onSave={handleNameSave} />
   {/if}
 
   <!-- Rules modal -->
@@ -464,6 +485,21 @@
     color: #fff;
     font-weight: 700;
   }
+
+  .new-game-btn {
+    margin-top: 8px;
+    padding: 12px 36px;
+    background: #ffd700;
+    border-radius: 30px;
+    color: #111;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+
+  .new-game-btn:hover { opacity: 0.85; }
 
   /* ── Mobile ──────────────────────────────────────────────────────────────── */
   @media (max-width: 600px) {

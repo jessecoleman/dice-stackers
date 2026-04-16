@@ -3,6 +3,7 @@
   import { cubicOut } from 'svelte/easing';
   import { gameStore, suits } from '$lib/gameStore.svelte';
 
+
   let { player }: { player: 1 | 2 } = $props();
 
   const SUIT_COLOR: Record<string, string> = {
@@ -92,7 +93,7 @@
 
 <!-- Desktop scoreboard -->
 <div class="scoreboard desktop-only" class:p2={player === 2}>
-  <div class="title">P{player}</div>
+  <div class="title">{gameStore.playerName(player)}</div>
   <table>
     <thead>
       <tr>
@@ -149,7 +150,7 @@
   class:flash-down={flashTotal === 'down'}
   onclick={() => modalOpen = true}
 >
-  <span class="badge-label">P{player}</span>
+  <span class="badge-label">{gameStore.playerName(player)}</span>
   <span class="badge-total">{Math.round(tweens['total'].current)}</span>
 </button>
 
@@ -158,7 +159,7 @@
   <div class="modal-backdrop" role="presentation" onclick={onBackdropClick}>
     <div class="modal" role="dialog" aria-modal="true" aria-label="Player {player} Score">
       <div class="modal-header">
-        <span class="modal-title">Player {player} Score</span>
+        <span class="modal-title">{gameStore.playerName(player)}</span>
         <button class="modal-close" onclick={() => modalOpen = false}>✕</button>
       </div>
       <div class="modal-body">
