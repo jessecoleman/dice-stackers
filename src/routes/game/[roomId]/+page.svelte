@@ -129,6 +129,17 @@
 
   $effect.pre(() => { if (seat === 1) showShareLink = true; });
 
+  let linkCopied = $state(false);
+  async function shareOrCopy() {
+    if (navigator.share) {
+      await navigator.share({ title: 'Join my Dice Stackers game', url: p2Link });
+    } else {
+      await navigator.clipboard.writeText(p2Link);
+      linkCopied = true;
+      setTimeout(() => { linkCopied = false; }, 2000);
+    }
+  }
+
   // When P1 detects player2Joined flipping to true, replace share link with toast.
   $effect(() => {
     if (seat === 1 && gameStore.player2Joined) {
@@ -149,6 +160,7 @@
     <div class="share-banner">
       <span>Share with Player 2:</span>
       <code class="share-link">{p2Link}</code>
+      <button class="share-btn" onclick={shareOrCopy}>{linkCopied ? '✓ Copied' : 'Share'}</button>
       <button class="dismiss-btn" onclick={() => showShareLink = false}>✕</button>
     </div>
   {/if}
@@ -397,6 +409,21 @@
     white-space: nowrap;
     max-width: 320px;
   }
+
+  .share-btn {
+    background: rgba(100, 160, 255, 0.15);
+    border: 1px solid rgba(100, 160, 255, 0.3);
+    border-radius: 6px;
+    color: #aac8ff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+
+  .share-btn:hover { background: rgba(100, 160, 255, 0.25); }
 
   .dismiss-btn {
     background: none;
