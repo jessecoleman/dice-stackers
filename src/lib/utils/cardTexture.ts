@@ -37,28 +37,47 @@ export function createCardTexture(card: Card): THREE.CanvasTexture {
   roundRect(ctx, 0, 0, W, H, 12);
   ctx.fill();
 
+  // Shadow helper
+  function setShadow(blur: number, offsetY = 1) {
+    ctx.shadowColor  = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur   = blur;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = offsetY;
+  }
+  function clearShadow() {
+    ctx.shadowColor  = 'transparent';
+    ctx.shadowBlur   = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  }
+
   // Large number
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.font = 'bold 72px Georgia, serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  setShadow(6, 2);
   ctx.fillText(val, W / 2, H / 2 - 16);
 
   // Suit symbol below the number
   ctx.font = '38px Georgia, serif';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  setShadow(5, 2);
   ctx.fillText(sym, W / 2, H / 2 + 38);
+  clearShadow();
 
   // Top-left corner label (value + suit side by side)
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.font = 'bold 30px Georgia, serif';
   ctx.textAlign = 'left';
+  setShadow(4, 1);
   ctx.fillText(val, 10, 8);
   const valWidth = ctx.measureText(val).width;
   ctx.font = '24px Georgia, serif';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.fillText(sym, 10 + valWidth + 3, 11);
+  clearShadow();
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -78,6 +97,11 @@ export function createDieLabelTexture(value: number, textColor: string): THREE.C
 
   // Transparent background — the die body colour shows through
   ctx.clearRect(0, 0, S, S);
+
+  const isLight = textColor === '#ffffff' || textColor.toLowerCase() === '#fff';
+  ctx.shadowColor   = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.4)';
+  ctx.shadowBlur    = 4;
+  ctx.shadowOffsetY = isLight ? 1 : -1;
 
   ctx.fillStyle = textColor;
   ctx.font = 'bold 80px Georgia, serif';

@@ -110,12 +110,14 @@
     color: rgba(255,255,255,0.95);
     font-family: Georgia, serif;
     line-height: 1;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.45);
   }
 
   .center-symbol {
     font-size: var(--card-sym-size, 18px);
     color: rgba(255,255,255,0.85);
     line-height: 1;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.45);
   }
 
   /* Back */

@@ -26,7 +26,14 @@
     if (e.key === 'Escape') gameStore.deselectCard();
   }
 
-  function calcScore(player: 1 | 2): number {
+  const SUIT_COLOR: Record<string, string> = {
+    red: '#e53e3e', green: '#38a169', yellow: '#d69e2e', blue: '#3b82f6',
+  };
+  const SUIT_SYMBOL: Record<string, string> = {
+    red: '♥', green: '♣', yellow: '★', blue: '♦',
+  };
+
+  function calcRows(player: 1 | 2) {
     return suits.map(suit => {
       const stacks = gameStore.grid.flat()
         .map(c => c.dice)
@@ -37,15 +44,19 @@
       const numStacks    = stacks.length;
       const tallestStack = stacks.reduce((m, s) => Math.max(s.length, m), 0);
       const maxPips      = stacks.reduce((m, s) => Math.max(s[s.length - 1].value, m), 0);
-      return numStacks * tallestStack * maxPips;
-    }).reduce((a: number, b: number) => a + b, 0);
+      return { suit, numStacks, tallestStack, maxPips, score: numStacks * tallestStack * maxPips };
+    });
   }
 
-  const score1 = $derived(calcScore(1));
-  const score2 = $derived(calcScore(2));
+  const rows1  = $derived(calcRows(1));
+  const rows2  = $derived(calcRows(2));
+  const score1 = $derived(rows1.reduce((s, r) => s + r.score, 0));
+  const score2 = $derived(rows2.reduce((s, r) => s + r.score, 0));
   const winner = $derived(
     score1 > score2 ? 1 : score2 > score1 ? 2 : null
   );
+
+  let resultMinimized = $state(false);
 
   // ── Polling ────────────────────────────────────────────────────────────────
   // Poll every second when it's not our seat's turn.
@@ -177,18 +188,71 @@
 
   <!-- Game-over overlay -->
   {#if gameStore.gamePhase === 'game-over'}
-    <div class="overlay">
-      <div class="result-card">
-        <div class="result-title">
+    {#if resultMinimized}
+      <div class="result-minimized">
+        <span class="minimized-title">
           {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
-        </div>
-        <div class="result-scores">
-          <div class:result-winner={winner === 1}>{gameStore.player1Name} — {score1}</div>
-          <div class:result-winner={winner === 2}>{gameStore.player2Name} — {score2}</div>
-        </div>
-        <a href="/" class="new-game-btn">New Game</a>
+        </span>
+        <span class="minimized-scores">{score1} – {score2}</span>
+        <button class="minimized-restore" onclick={() => resultMinimized = false}>View Results</button>
       </div>
-    </div>
+    {:else}
+      <div class="overlay">
+        <div class="result-card">
+          <button class="minimize-btn" onclick={() => resultMinimized = true} title="View board">⊟</button>
+          <div class="result-title">
+            {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
+          </div>
+
+          <!-- Score tables side by side -->
+          <div class="result-tables">
+            {#each ([1, 2] as const) as p}
+              {@const rows = p === 1 ? rows1 : rows2}
+              {@const total = p === 1 ? score1 : score2}
+              <div class="result-table-wrap" class:result-winner-col={winner === p}>
+                <div class="result-table-name">{gameStore.playerName(p)}</div>
+                <table class="result-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>Pips</th>
+                      <th class="op">×</th>
+                      <th>Ht</th>
+                      <th class="op">×</th>
+                      <th>St</th>
+                      <th class="op">=</th>
+                      <th>Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each rows as row}
+                      <tr class:zero={row.score === 0}>
+                        <td class="suit" style="color:{SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
+                        <td>{row.maxPips || '—'}</td>
+                        <td class="op">×</td>
+                        <td>{row.tallestStack || '—'}</td>
+                        <td class="op">×</td>
+                        <td>{row.numStacks || '—'}</td>
+                        <td class="op">=</td>
+                        <td class="pts">{row.score || '—'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="7" class="total-label">Total</td>
+                      <td class="total-pts">{total}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            {/each}
+          </div>
+
+          <a href="/" class="new-game-btn">New Game</a>
+        </div>
+      </div>
+    {/if}
   {/if}
 
   <!-- Name modal -->
@@ -490,40 +554,171 @@
   }
 
   .result-card {
-    background: rgba(15, 20, 35, 0.95);
+    position: relative;
+    background: rgba(15, 20, 35, 0.97);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
-    padding: 40px 56px;
+    padding: 32px 40px 36px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 24px;
+    gap: 20px;
+    max-width: min(680px, 92vw);
+    width: 100%;
   }
 
+  .minimize-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.3);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 6px;
+    line-height: 1;
+    transition: color 0.15s;
+  }
+
+  .minimize-btn:hover { color: rgba(255,255,255,0.7); }
+
   .result-title {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 700;
     color: #ffd700;
     letter-spacing: 0.05em;
   }
 
-  .result-scores {
+  /* Score tables */
+  .result-tables {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    font-size: 16px;
-    color: #888;
+    gap: 24px;
+    width: 100%;
   }
 
-  .result-winner {
-    color: #fff;
-    font-weight: 700;
+  .result-table-wrap {
+    flex: 1;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 10px 12px 12px;
   }
+
+  .result-table-wrap.result-winner-col {
+    border-color: rgba(255, 215, 0, 0.3);
+    background: rgba(255, 215, 0, 0.04);
+  }
+
+  .result-table-name {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 8px;
+    text-align: center;
+  }
+
+  .result-winner-col .result-table-name { color: #ffd700; }
+
+  .result-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 11px;
+  }
+
+  .result-table th {
+    color: #555;
+    font-weight: 600;
+    text-align: right;
+    padding: 0 3px 4px;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .result-table td {
+    text-align: right;
+    padding: 3px;
+    color: #aaa;
+  }
+
+  .result-table td:first-child { text-align: left; }
+  .result-table th:first-child { text-align: left; }
+
+  .result-table .op {
+    color: #444;
+    font-size: 8px;
+    padding: 0 1px;
+    text-align: center;
+  }
+
+  .result-table .suit { font-size: 13px; }
+  .result-table .pts  { font-weight: 600; color: #ccc; }
+  .result-table .zero td { opacity: 0.35; }
+
+  .result-table tfoot tr { border-top: 1px solid rgba(255,255,255,0.1); }
+
+  .total-label {
+    color: #555;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-top: 5px;
+  }
+
+  .total-pts {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffd700;
+    padding-top: 5px;
+  }
+
+  /* Minimized bar */
+  .result-minimized {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    translate: -50% 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(15, 20, 35, 0.95);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 30px;
+    padding: 8px 10px 8px 18px;
+    z-index: 100;
+    white-space: nowrap;
+  }
+
+  .minimized-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffd700;
+  }
+
+  .minimized-scores {
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+  }
+
+  .minimized-restore {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    color: #ccc;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .minimized-restore:hover { background: rgba(255,255,255,0.15); }
 
   .new-game-btn {
-    margin-top: 8px;
-    padding: 12px 36px;
+    padding: 11px 32px;
     background: #ffd700;
     border-radius: 30px;
     color: #111;
@@ -535,6 +730,11 @@
   }
 
   .new-game-btn:hover { opacity: 0.85; }
+
+  @media (max-width: 600px) {
+    .result-tables { flex-direction: column; gap: 12px; }
+    .result-card   { padding: 28px 16px 28px; }
+  }
 
   /* ── Mobile ──────────────────────────────────────────────────────────────── */
   @media (max-width: 600px) {
