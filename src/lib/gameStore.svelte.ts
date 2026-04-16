@@ -21,7 +21,7 @@ export type { Suit, Die, CellStack, Card, Edge, GameState, EventLogEntry };
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 type HoverHighlight =
-  | { type: 'cell'; row: number; col: number }
+  | { type: 'cell'; row: number; col: number; dieId?: string }
   | { type: 'slot'; edge: Edge; index: 0 | 1 | 2 }
   | null;
 

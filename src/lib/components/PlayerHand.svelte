@@ -27,16 +27,16 @@
 </script>
 
 <div class="hand-area" class:active={isActive} class:player2={player === 2}>
-  <div class="label">
+  <div class="label" class:p1={player === 1} class:p2={player === 2}>
     <span class="pip-die" class:pip-white={player === 2}>
       <span class="pip-dot"></span>
     </span>
     {gameStore.playerName(player)}
     {#if isActive}<span class="turn-dot"></span>{/if}
-    {#if isActive && !gameStore.pendingDiePlacement && gameStore.drawPile.length > 0}
+    {#if isActive && player === gameStore.seat && !gameStore.pendingDiePlacement && gameStore.drawPile.length > 0}
       <button class="draw-btn" onclick={() => gameStore.drawToSix()}>Draw to 6</button>
     {/if}
-    {#if isActive && gameStore.pendingDiePlacement}
+    {#if isActive && player === gameStore.seat && gameStore.pendingDiePlacement}
       <button class="cancel-btn" onclick={() => gameStore.cancelTurn()}>Cancel</button>
     {/if}
   </div>
@@ -102,8 +102,8 @@
     width: 18px;
     height: 18px;
     border-radius: 4px;
-    background: #c0392b;
-    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3);
+    background: #e8e8e8;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25);
     flex-shrink: 0;
   }
 
@@ -114,9 +114,17 @@
     background: #111;
   }
 
+  .pip-die.pip-white {
+    background: #1a1a1a;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.15);
+  }
+
   .pip-die.pip-white .pip-dot {
     background: #fff;
   }
+
+  .label.p1 { color: #c8c8c8; }
+  .label.p2 { color: #888; }
 
   .turn-dot {
     width: 7px;

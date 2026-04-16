@@ -37,6 +37,7 @@ export interface EventLogEntry {
   timestamp: number;
   slot?: { edge: Edge; index: 0 | 1 | 2 };
   cell?: { row: number; col: number };
+  dieId?: string;
 }
 
 export interface GameState {
@@ -279,8 +280,9 @@ export function applyAction(
         player,
         edge: dieEdge,
       });
+      const placedDieId = s.grid[row][col].dice[s.grid[row][col].dice.length - 1].id;
       s.pendingDiePlacement = null;
-      s.eventLog.push({ player, action: 'placed', detail: `die at (${row}, ${col})`, timestamp: Date.now(), cell: { row, col } });
+      s.eventLog.push({ player, action: 'placed', detail: `die at (${row}, ${col})`, timestamp: Date.now(), cell: { row, col }, dieId: placedDieId });
       s.updatedAt = Date.now();
       return { state: advanceTurn(s) };
     }

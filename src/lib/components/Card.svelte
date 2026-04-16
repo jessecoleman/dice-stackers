@@ -67,7 +67,12 @@
     position: relative;
   }
 
-  .card:hover {
+  .card.face-down {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .card:not(.face-down):hover {
     transform: translateY(-12px) scale(1.05);
     z-index: 20;
   }
@@ -96,7 +101,7 @@
     height: 100%;
     border-radius: 8px;
     background: var(--suit-color);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.2);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -126,9 +131,8 @@
     width: 100%;
     height: 100%;
     border-radius: 8px;
-    background: #1e3a5f;
-    border: 1px solid #2d5a8e;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    background: var(--suit-color);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35), inset 0 0 0 2px rgba(0,0,0,0.2);
     overflow: hidden;
     display: flex;
     align-items: center;

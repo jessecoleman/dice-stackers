@@ -285,7 +285,7 @@
     </div>
 
     <div class="canvas-wrapper">
-      <Canvas>
+      <Canvas shadows="soft">
         <Scene {resetSignal} {topDown} />
       </Canvas>
       <button class="recenter-btn" onclick={recenter} title="Recenter camera">⊕</button>

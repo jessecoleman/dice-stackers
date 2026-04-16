@@ -66,7 +66,7 @@
         class:highlightable={hasTarget}
         onmouseenter={() => {
           if (entry.slot) gameStore.setHoverHighlight({ type: 'slot', edge: entry.slot.edge, index: entry.slot.index });
-          else if (entry.cell) gameStore.setHoverHighlight({ type: 'cell', row: entry.cell.row, col: entry.cell.col });
+          else if (entry.cell) gameStore.setHoverHighlight({ type: 'cell', row: entry.cell.row, col: entry.cell.col, dieId: entry.dieId });
         }}
         onmouseleave={() => gameStore.setHoverHighlight(null)}
       >

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { T } from '@threlte/core';
   import { useCursor, RoundedBoxGeometry } from '@threlte/extras';
+  import { Tween } from 'svelte/motion';
+  import { cubicOut } from 'svelte/easing';
   import { createDieLabelTexture } from '$lib/utils/cardTexture';
   import type { Die } from '$lib/gameStore.svelte';
 
@@ -8,10 +10,12 @@
     die,
     position = [0, 0, 0],
     interactive = true,
+    highlighted = false,
   }: {
     die: Die;
     position?: [number, number, number];
     interactive?: boolean;
+    highlighted?: boolean;
   } = $props();
 
   const { onPointerEnter, onPointerLeave } = useCursor();
@@ -38,9 +42,18 @@
   });
 
   let hovered = $state(false);
+
+  // Drop-in animation
+  const ANIM = { duration: 300, easing: cubicOut };
+  const dropY   = new Tween(1.0, { duration: 0 });
+  const opacity = new Tween(0,   { duration: 0 });
+  $effect(() => {
+    dropY.set(0,   ANIM);
+    opacity.set(1, ANIM);
+  });
 </script>
 
-<T.Group position={position}>
+<T.Group position={[position[0], position[1] + dropY.current, position[2]]}>
   <!-- Die body -->
   <T.Mesh
     castShadow
@@ -65,17 +78,39 @@
       thickness={DIE_SIZE}
       ior={1.45}
       transparent={true}
+      opacity={opacity.current}
       emissive={color}
-      emissiveIntensity={hovered && interactive ? 0.35 : 0.05}
+      emissiveIntensity={hovered && interactive ? 0.35 : highlighted ? 0.4 : 0.05}
     />
   </T.Mesh>
 
-  <!-- Numeral on the top face (+Y) — rotated to match the card face reading direction -->
+  <!-- Numerals on all faces -->
   {#if labelTex}
     {@const labelRotZ = die.edge === 'top' ? Math.PI : die.edge === 'right' ? Math.PI / 2 : die.edge === 'left' ? 3 * Math.PI / 2 : 0}
+    <!-- Top face -->
     <T.Mesh position={[0, LABEL_Y, 0]} rotation={[-Math.PI / 2, 0, labelRotZ]}>
       <T.PlaneGeometry args={[DIE_SIZE * 0.8, DIE_SIZE * 0.8]} />
-      <T.MeshBasicMaterial map={labelTex} transparent={true} depthWrite={false} />
+      <T.MeshBasicMaterial map={labelTex} transparent={true} opacity={opacity.current} depthWrite={false} />
+    </T.Mesh>
+    <!-- Front face (+Z) -->
+    <T.Mesh position={[0, 0, DIE_HALF + 0.001]} rotation={[0, 0, 0]}>
+      <T.PlaneGeometry args={[DIE_SIZE * 0.8, DIE_SIZE * 0.8]} />
+      <T.MeshBasicMaterial map={labelTex} transparent={true} opacity={opacity.current} depthWrite={false} />
+    </T.Mesh>
+    <!-- Back face (-Z) -->
+    <T.Mesh position={[0, 0, -(DIE_HALF + 0.001)]} rotation={[0, Math.PI, 0]}>
+      <T.PlaneGeometry args={[DIE_SIZE * 0.8, DIE_SIZE * 0.8]} />
+      <T.MeshBasicMaterial map={labelTex} transparent={true} opacity={opacity.current} depthWrite={false} />
+    </T.Mesh>
+    <!-- Right face (+X) -->
+    <T.Mesh position={[DIE_HALF + 0.001, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+      <T.PlaneGeometry args={[DIE_SIZE * 0.8, DIE_SIZE * 0.8]} />
+      <T.MeshBasicMaterial map={labelTex} transparent={true} opacity={opacity.current} depthWrite={false} />
+    </T.Mesh>
+    <!-- Left face (-X) -->
+    <T.Mesh position={[-(DIE_HALF + 0.001), 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+      <T.PlaneGeometry args={[DIE_SIZE * 0.8, DIE_SIZE * 0.8]} />
+      <T.MeshBasicMaterial map={labelTex} transparent={true} opacity={opacity.current} depthWrite={false} />
     </T.Mesh>
   {/if}
 </T.Group>

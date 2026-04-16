@@ -21,10 +21,12 @@
 
   const stack = $derived(gameStore.grid[row][col].dice);
   const isPendingTarget = $derived(gameStore.isCellValidForDiePlacement(row, col));
-  const isLogHovered = $derived(
+  const logHover = $derived(
     gameStore.hoverHighlight?.type === 'cell' &&
     gameStore.hoverHighlight.row === row &&
     gameStore.hoverHighlight.col === col
+      ? gameStore.hoverHighlight
+      : null
   );
   const isNoPlacementWarning = $derived(gameStore.isCellNoPlacementWarning(row, col));
   const seatCanPlace = $derived(
@@ -61,27 +63,16 @@
       {die}
       position={[0, 0.06 + DIE_SIZE / 2 + i * STACK_STEP, 0]}
       interactive={!isPendingTarget}
+      highlighted={logHover !== null && (!logHover.dieId || logHover.dieId === die.id)}
     />
   {/each}
 
-  <!-- No-placement warning: shown when a valid card slot aligns here but no die can be placed -->
+  <!-- No-placement warning: ghost red die cube where the die would land -->
   {#if isNoPlacementWarning}
-    {@const topY = stack.length > 0 ? 0.06 + DIE_SIZE / 2 + (stack.length - 1) * STACK_STEP + DIE_SIZE / 2 + 0.08 : 0.18}
+    {@const topY = 0.06 + DIE_SIZE / 2 + stack.length * STACK_STEP}
     <T.Mesh position={[0, topY, 0]}>
-      <T.CylinderGeometry args={[0.28, 0.28, 0.03, 24]} />
-      <T.MeshStandardMaterial color="#ff4444" emissive="#ff0000" emissiveIntensity={0.6} transparent opacity={0.75} />
-    </T.Mesh>
-    <T.Mesh position={[0, topY + 0.02, 0]}>
-      <T.CylinderGeometry args={[0.14, 0.14, 0.03, 24]} />
-      <T.MeshStandardMaterial color="#1a0000" roughness={0.8} />
-    </T.Mesh>
-  {/if}
-
-  <!-- Event log hover highlight -->
-  {#if isLogHovered}
-    <T.Mesh position={[0, 0.07, 0]}>
-      <T.BoxGeometry args={[CELL_SIZE - 0.05, 0.02, CELL_SIZE - 0.05]} />
-      <T.MeshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.0} transparent opacity={0.35} />
+      <T.BoxGeometry args={[DIE_SIZE * 0.45, DIE_SIZE * 0.45, DIE_SIZE * 0.45]} />
+      <T.MeshStandardMaterial color="#ff2222" emissive="#ff0000" emissiveIntensity={0.4} transparent opacity={0.75} depthWrite={false} />
     </T.Mesh>
   {/if}
 

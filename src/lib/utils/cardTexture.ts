@@ -98,16 +98,78 @@ export function createDieLabelTexture(value: number, textColor: string): THREE.C
   // Transparent background — the die body colour shows through
   ctx.clearRect(0, 0, S, S);
 
+  // Radial gradient overlay: lighter centre for dark text, darker centre for light text
   const isLight = textColor === '#ffffff' || textColor.toLowerCase() === '#fff';
-  ctx.shadowColor   = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.4)';
-  ctx.shadowBlur    = 4;
-  ctx.shadowOffsetY = isLight ? 1 : -1;
+  const grad = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.6);
+  if (isLight) {
+    grad.addColorStop(0, 'rgba(0,0,0,0.18)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+  } else {
+    grad.addColorStop(0, 'rgba(255,255,255,0.18)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, S, S);
 
   ctx.fillStyle = textColor;
-  ctx.font = 'bold 80px Georgia, serif';
+  ctx.font = 'bold 92px Georgia, serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(value), S / 2, S / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Generates a procedural wood-grain canvas texture for the board surface.
+ */
+export function createWoodTexture(): THREE.CanvasTexture {
+  const W = 1024, H = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+
+  // Base warm brown
+  ctx.fillStyle = '#5c3d1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grain lines — wavy horizontals varying in brightness, width, and amplitude
+  const lineCount = 140;
+  for (let i = 0; i < lineCount; i++) {
+    const baseY = (i / lineCount) * H;
+
+    // Pseudo-random variation seeded from i
+    const seed1 = (i * 73)  % 100 / 100;
+    const seed2 = (i * 137) % 100 / 100;
+    const isLight = (i * 31) % 7 > 3;
+
+    const r = isLight ? Math.round(105 + seed1 * 35) : Math.round(35 + seed1 * 22);
+    const g = isLight ? Math.round(68  + seed1 * 22) : Math.round(22 + seed1 * 14);
+    const b = isLight ? Math.round(24  + seed1 * 10) : Math.round(7  + seed1 * 6);
+    const a = isLight ? 0.15 + seed2 * 0.18 : 0.18 + seed2 * 0.22;
+
+    ctx.strokeStyle = `rgba(${r},${g},${b},${a})`;
+    ctx.lineWidth   = 0.5 + (i % 4) * 0.35;
+    ctx.beginPath();
+
+    const freq1  = 1 + (i % 5) * 0.28;
+    const freq2  = 2.3 + (i % 3) * 0.6;
+    const amp1   = 2 + (i % 7);
+    const amp2   = 1 + (i % 3) * 0.6;
+    const phase  = (i * 1.618) % (Math.PI * 2);
+
+    for (let x = 0; x <= W; x += 3) {
+      const t = x / W;
+      const wave = Math.sin(t * Math.PI * 2 * freq1 + phase) * amp1
+                 + Math.sin(t * Math.PI * 2 * freq2 + phase * 1.4) * amp2;
+      if (x === 0) ctx.moveTo(x, baseY + wave);
+      else          ctx.lineTo(x, baseY + wave);
+    }
+    ctx.stroke();
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

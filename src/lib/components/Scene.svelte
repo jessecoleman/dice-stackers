@@ -73,6 +73,8 @@
   castShadow
   shadow.mapSize.width={1024}
   shadow.mapSize.height={1024}
+  shadow.radius={8}
+  shadow.blurSamples={16}
 />
 <T.DirectionalLight position={[-4, 6, -4]} intensity={0.4} color="#a0c0ff" />
 

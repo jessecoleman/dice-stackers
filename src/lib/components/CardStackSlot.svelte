@@ -155,7 +155,13 @@
         position={[ox, y, oz]}
         rotation={[-Math.PI / 2, 0, 0]}
       >
-        <T.MeshStandardMaterial color={SUIT_COLOR[card.suit] ?? '#888'} roughness={0.45} metalness={0.05} />
+        <T.MeshStandardMaterial
+          color={SUIT_COLOR[card.suit] ?? '#888'}
+          roughness={0.45}
+          metalness={0.05}
+          emissive={isLogHovered ? '#ffffff' : '#000000'}
+          emissiveIntensity={isLogHovered ? 0.7 : 0}
+        />
       </T.Mesh>
     {/if}
     <!-- Card face texture (number + suit) -->
@@ -184,14 +190,6 @@
       depthWrite={false}
     />
   </T.Mesh>
-
-  <!-- Event log hover highlight -->
-  {#if isLogHovered}
-    <T.Mesh position={[0, 0.004, 0]}>
-      <T.BoxGeometry args={[cardW + 0.1, 0.003, cardD + 0.1]} />
-      <T.MeshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.2} transparent opacity={0.5} depthWrite={false} />
-    </T.Mesh>
-  {/if}
 
   <!-- Valid-target glow ring ──────────────────────────────────────────────── -->
   {#if isValid}
