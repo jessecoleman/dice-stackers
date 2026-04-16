@@ -104,12 +104,9 @@ export function createDieLabelTexture(value: number, textColor: string): THREE.C
   if (isLight) {
     grad.addColorStop(0, 'rgba(0,0,0,0.18)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
-  } else {
-    grad.addColorStop(0, 'rgba(255,255,255,0.18)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, S, S);
   }
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, S, S);
 
   ctx.fillStyle = textColor;
   ctx.font = 'bold 92px Georgia, serif';
