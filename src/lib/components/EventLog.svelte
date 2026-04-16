@@ -58,7 +58,7 @@
 
 <!-- Desktop widget -->
 <div class="event-log desktop-only">
-  <div class="log-title">Event Log</div>
+  <div class="log-title">Player Actions</div>
   <ul class="log-list" bind:this={listEl}>
     {#each gameStore.eventLog as entry, i (i)}
       {@const hasTarget = !!(entry.slot || entry.cell)}
@@ -116,9 +116,9 @@
 <!-- Modal (mobile) -->
 {#if modalOpen}
   <div class="modal-backdrop" role="presentation" onclick={onBackdropClick}>
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Event Log">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Player Actions">
       <div class="modal-header">
-        <span class="modal-title">Event Log</span>
+        <span class="modal-title">Player Actions</span>
         <button class="modal-close" onclick={() => modalOpen = false}>✕</button>
       </div>
       <ul class="log-list modal-list" bind:this={modalListEl}>
