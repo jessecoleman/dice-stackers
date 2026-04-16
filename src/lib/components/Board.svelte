@@ -1,6 +1,5 @@
 <script lang="ts">
   import { T } from '@threlte/core';
-  import { RoundedBoxGeometry } from '@threlte/extras';
   import * as THREE from 'three';
   import GridCell from './GridCell.svelte';
   import CardStackSlot from './CardStackSlot.svelte';
@@ -18,6 +17,34 @@
   function cellPos(i: number): number {
     return OFFSET + i * STEP;
   }
+
+  // Rounded-rectangle extrusion: flat top/bottom, rounded XZ corners only.
+  // Shape is in XY plane; mesh is rotated -π/2 on X so shape-Y maps to world-Z.
+  function makeRoundedSlab(w: number, depth: number, h: number, r: number): THREE.ExtrudeGeometry {
+    const shape = new THREE.Shape();
+    shape.moveTo(-w / 2 + r, -depth / 2);
+    shape.lineTo( w / 2 - r, -depth / 2);
+    shape.quadraticCurveTo( w / 2, -depth / 2,  w / 2, -depth / 2 + r);
+    shape.lineTo( w / 2,  depth / 2 - r);
+    shape.quadraticCurveTo( w / 2,  depth / 2,  w / 2 - r,  depth / 2);
+    shape.lineTo(-w / 2 + r,  depth / 2);
+    shape.quadraticCurveTo(-w / 2,  depth / 2, -w / 2,  depth / 2 - r);
+    shape.lineTo(-w / 2, -depth / 2 + r);
+    shape.quadraticCurveTo(-w / 2, -depth / 2, -w / 2 + r, -depth / 2);
+    shape.closePath();
+    return new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+  }
+
+  let boardGeo = $state<THREE.ExtrudeGeometry | null>(null);
+  let trimGeo  = $state<THREE.ExtrudeGeometry | null>(null);
+
+  $effect(() => {
+    const bg = makeRoundedSlab(7.5, 7.5, 0.18, 0.5);
+    const tg = makeRoundedSlab(7.2, 7.2, 0.06, 0.5);
+    boardGeo = bg;
+    trimGeo  = tg;
+    return () => { bg.dispose(); tg.dispose(); };
+  });
 
   let woodTex = $state<THREE.CanvasTexture | null>(null);
   $effect(() => {
@@ -63,16 +90,18 @@
 </script>
 
 <!-- Board base — extended to sit under the card slots -->
-<T.Mesh position={[0, -0.12, 0]} receiveShadow>
-  <RoundedBoxGeometry args={[7.5, 0.18, 7.5]} radius={0.35} smoothness={4} />
-  <T.MeshStandardMaterial map={woodTex ?? undefined} color="#5c3d1a" roughness={0.85} />
-</T.Mesh>
+{#if boardGeo}
+  <T.Mesh geometry={boardGeo} position={[0, -0.21, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+    <T.MeshStandardMaterial map={woodTex ?? undefined} color="#5c3d1a" roughness={0.85} />
+  </T.Mesh>
+{/if}
 
 <!-- Board legs / base trim -->
-<T.Mesh position={[0, -0.24, 0]}>
-  <RoundedBoxGeometry args={[7.2, 0.06, 7.2]} radius={0.3} smoothness={4} />
-  <T.MeshStandardMaterial color="#3d2608" roughness={1} />
-</T.Mesh>
+{#if trimGeo}
+  <T.Mesh geometry={trimGeo} position={[0, -0.27, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+    <T.MeshStandardMaterial color="#3d2608" roughness={1} />
+  </T.Mesh>
+{/if}
 
 <!-- Player-side border strips (shortened to 6.74 so corners don't overlap) -->
 <!-- P1 white: near + right -->
