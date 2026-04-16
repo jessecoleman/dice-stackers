@@ -91,28 +91,36 @@
   });
 
   // ── Name modal ────────────────────────────────────────────────────────────
+  const RULES_KEY = 'rules-seen-v1';
   let showNameModal = $state(false);
+  let showRules     = $state(false);
+  let pendingRules  = false; // queued to show after name is saved
+
   $effect.pre(() => {
-    if (seat !== null && typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem('player-name');
-      if (!saved) showNameModal = true;
+    if (typeof localStorage === 'undefined') return;
+    const hasName  = !!localStorage.getItem('player-name');
+    const hasRules = !!localStorage.getItem(RULES_KEY);
+
+    if (seat !== null && !hasName) {
+      // Seated player hasn't set a name — prompt first, rules after if needed
+      showNameModal = true;
+      if (!hasRules) pendingRules = true;
+    } else if (!hasRules) {
+      // Name already set (or spectator) — show rules directly
+      showRules = true;
+      localStorage.setItem(RULES_KEY, '1');
     }
   });
 
   async function handleNameSave(name: string) {
     showNameModal = false;
     await gameStore.setName(name);
-  }
-
-  // ── Rules modal ───────────────────────────────────────────────────────────
-  const RULES_KEY = 'rules-seen-v1';
-  let showRules = $state(false);
-  $effect.pre(() => {
-    if (typeof localStorage !== 'undefined' && !localStorage.getItem(RULES_KEY)) {
+    if (pendingRules) {
+      pendingRules = false;
       showRules = true;
-      localStorage.setItem(RULES_KEY, '1');
+      if (typeof localStorage !== 'undefined') localStorage.setItem(RULES_KEY, '1');
     }
-  });
+  }
 
   // ── Share link / join toast (seat 1 only) ──────────────────────────────────
   const p2Link = $derived(`${typeof window !== 'undefined' ? window.location.origin : ''}/game/${roomId}?seat=2`);
