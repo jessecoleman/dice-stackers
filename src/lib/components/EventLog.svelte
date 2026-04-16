@@ -74,7 +74,7 @@
         onmouseleave={() => gameStore.setHoverHighlight(null)}
       >
         <span class="timestamp">{timeAgo(entry.timestamp)}</span>
-        <span class="player-tag">P{entry.player}</span>
+        <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
         <span class="action">{actionLabel(entry)}</span>
         <span class="detail">
           {#if entry.action === 'placed'}
@@ -129,7 +129,7 @@
             class:p2={entry.player === 2}
           >
             <span class="timestamp">{timeAgo(entry.timestamp)}</span>
-            <span class="player-tag">P{entry.player}</span>
+            <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
             <span class="action">{actionLabel(entry)}</span>
             <span class="detail">
               {#if entry.action === 'placed'}
