@@ -2,6 +2,44 @@
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
   import { gameStore, suits } from '$lib/gameStore.svelte';
+  import { computePosition, offset, flip, shift } from '@floating-ui/dom';
+
+  // Svelte action: positions a tooltip element relative to its anchor using Floating UI.
+  function tooltip(anchor: HTMLElement, text: string) {
+    const tip = document.createElement('div');
+    tip.className = 'fl-tooltip';
+    tip.textContent = text;
+    tip.style.cssText = 'position:fixed;z-index:999;pointer-events:none;opacity:0;transition:opacity 0.15s;';
+    document.body.appendChild(tip);
+
+    async function position() {
+      const { x, y } = await computePosition(anchor, tip, {
+        placement: 'top',
+        middleware: [offset(6), flip(), shift({ padding: 8 })],
+      });
+      tip.style.left = `${x}px`;
+      tip.style.top  = `${y}px`;
+    }
+
+    function show() { position(); tip.style.opacity = '1'; }
+    function hide() { tip.style.opacity = '0'; }
+
+    anchor.addEventListener('mouseenter', show);
+    anchor.addEventListener('mouseleave', hide);
+    anchor.addEventListener('focus',      show);
+    anchor.addEventListener('blur',       hide);
+
+    return {
+      update(newText: string) { tip.textContent = newText; },
+      destroy() {
+        anchor.removeEventListener('mouseenter', show);
+        anchor.removeEventListener('mouseleave', hide);
+        anchor.removeEventListener('focus',      show);
+        anchor.removeEventListener('blur',       hide);
+        tip.remove();
+      },
+    };
+  }
 
 
   let { player }: { player: 1 | 2 } = $props();
@@ -133,11 +171,11 @@
     <thead>
       <tr>
         <th></th>
-        <th class="tip" data-tip="The highest die value on top of any stack you own in this suit">Pips</th>
+        <th class="tip" use:tooltip={"The highest die value on top of any stack you own in this suit"}>Pips</th>
         <th class="op">×</th>
-        <th class="tip" data-tip="The number of dice in your tallest stack of this suit">Height</th>
+        <th class="tip" use:tooltip={"The number of dice in your tallest stack of this suit"}>Height</th>
         <th class="op">×</th>
-        <th class="tip" data-tip="How many stacks you own (top die) in this suit">Stacks</th>
+        <th class="tip" use:tooltip={"How many stacks you own (top die) in this suit"}>Stacks</th>
         <th class="op">=</th>
         <th>Score</th>
       </tr>
@@ -306,36 +344,26 @@
   }
 
   th.tip {
-    position: relative;
     cursor: default;
     text-decoration: underline dotted rgba(255,255,255,0.2);
     text-underline-offset: 2px;
   }
 
-  th.tip::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    translate: -50% 0;
+  th:first-child { text-align: left; }
+
+  :global(.fl-tooltip) {
     background: rgba(15, 20, 40, 0.96);
     border: 1px solid rgba(255,255,255,0.12);
     border-radius: 6px;
     padding: 5px 8px;
     font-size: 10px;
     font-weight: 400;
-    text-transform: none;
-    letter-spacing: 0;
     color: #ccc;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
+    white-space: normal;
+    max-width: 180px;
+    line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   }
-
-  th.tip:hover::after { opacity: 1; }
-  th:first-child { text-align: left; }
 
   td {
     text-align: right;

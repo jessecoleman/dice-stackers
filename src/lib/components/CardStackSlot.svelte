@@ -3,6 +3,7 @@
   import * as THREE from 'three';
   import { gameStore, PLAYER_EDGES, type Edge } from '$lib/gameStore.svelte';
   import CardSlotCard from './CardSlotCard.svelte';
+  import emptyStackUrl from '$lib/assets/empty-stack.svg?url';
 
   let { edge, index }: { edge: Edge; index: 0 | 1 | 2 } = $props();
 
@@ -112,32 +113,27 @@
     return () => { hg.dispose(); vg.dispose(); };
   });
 
-
+  // Empty-slot SVG texture
+  let emptyTex = $state<THREE.Texture | null>(null);
+  $effect(() => {
+    const t = new THREE.TextureLoader().load(emptyStackUrl);
+    t.colorSpace = THREE.SRGBColorSpace;
+    emptyTex = t;
+    return () => t.dispose();
+  });
 </script>
 
 <T.Group position={[px, 0, pz]}>
 
-  <!-- Empty-slot outline ─────────────────────────────────────────────────── -->
-  {#if cards.length === 0}
-    <!-- Thin card silhouette, 70% the size of a real card -->
-    <T.Mesh position={[0, 0.005, 0]}>
-      <T.BoxGeometry args={[cardW * 0.7, 0.004, cardD * 0.7]} />
-      <T.MeshStandardMaterial
-        color="#ffffff"
-        transparent
-        opacity={isValid ? 0.22 : 0.08}
-        roughness={1}
-        depthWrite={false}
-      />
-    </T.Mesh>
-    <!-- Wireframe border -->
-    <T.Mesh position={[0, 0.005, 0]}>
-      <T.BoxGeometry args={[cardW * 0.7 + 0.02, 0.003, cardD * 0.7 + 0.02]} />
-      <T.MeshStandardMaterial
+  <!-- Empty-slot placeholder ─────────────────────────────────────────────── -->
+  {#if cards.length === 0 && emptyTex}
+    <T.Mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, faceRotZ]}>
+      <T.PlaneGeometry args={[Math.min(cardW, cardD), Math.max(cardW, cardD)]} />
+      <T.MeshBasicMaterial
+        map={emptyTex}
         color="#ffffff"
         transparent
         opacity={isValid ? 0.45 : 0.15}
-        wireframe
         depthWrite={false}
       />
     </T.Mesh>

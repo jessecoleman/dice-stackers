@@ -1,6 +1,7 @@
 <script lang="ts">
   import { gameStore } from '$lib/gameStore.svelte';
   import Card from './Card.svelte';
+  import emptyStackUrl from '$lib/assets/empty-stack.svg?url';
 
   const remaining  = $derived(gameStore.drawPile.length);
   const myHand     = $derived(gameStore.seat === 2 ? gameStore.player2Hand : gameStore.player1Hand);
@@ -32,7 +33,7 @@
     {#if remaining}
       <div class="count-badge">{remaining}</div>
     {:else}
-      <div class="empty-label">Empty</div>
+      <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
     {/if}
   </button>
 </div>
@@ -103,13 +104,11 @@
     z-index: 10;
   }
 
-  .empty-label {
+  .empty-placeholder {
     position: absolute;
     inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    color: #555;
+    width: 100%;
+    height: 100%;
+    opacity: 0.3;
   }
 </style>

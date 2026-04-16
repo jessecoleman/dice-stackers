@@ -1,22 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { crossfade, fade } from 'svelte/transition';
-  import { cubicInOut, cubicOut } from 'svelte/easing';
+  import { crossfade, fade, fly } from 'svelte/transition';
+  import { cubicInOut } from 'svelte/easing';
 
   const [send, receive] = crossfade({ duration: 450, easing: cubicInOut });
-
-  function resultCardIn(node: Element) {
-    return {
-      delay: 150,
-      duration: 500,
-      easing: cubicOut,
-      css: (t: number) => `
-        opacity: ${t};
-        transform: scale(${0.88 + 0.12 * t}) translateY(${(1 - t) * 28}px);
-      `,
-    };
-  }
   import { Canvas } from '@threlte/core';
   import Scene from '$lib/components/Scene.svelte';
   import PlayerHand from '$lib/components/PlayerHand.svelte';
@@ -86,6 +74,19 @@
 
   let resultMinimized = $state(false);
 
+  // ── Game-over entrance animation ───────────────────────────────────────────
+  // Start minimized, then crossfade to the full card after a short delay.
+  let expandTimer: ReturnType<typeof setTimeout> | null = null;
+  let gameOverHandled = false;
+  $effect(() => {
+    if (gameStore.gamePhase === 'game-over' && !gameOverHandled) {
+      gameOverHandled = true;
+      resultMinimized = true;
+      expandTimer = setTimeout(() => { resultMinimized = false; }, 1400);
+    }
+  });
+  onDestroy(() => { if (expandTimer) clearTimeout(expandTimer); });
+
   // ── Rematch ────────────────────────────────────────────────────────────────
   let rematchPending = $state(false);
 
@@ -103,9 +104,11 @@
   }
 
   // Redirect automatically when the other player accepts
+  let rematchHandled = false;
   $effect(() => {
     const newRoomId = gameStore.rematchRoomId;
-    if (newRoomId && gameStore.gamePhase === 'game-over') {
+    if (newRoomId && gameStore.gamePhase === 'game-over' && !rematchHandled) {
+      rematchHandled = true;
       playPlayerJoined();
       const newSeat = seat === 1 ? 2 : seat === 2 ? 1 : null;
       const query = newSeat ? `?seat=${newSeat}` : '';
@@ -239,11 +242,15 @@
   }
 
   // When P1 detects player2Joined flipping to true, replace share link with toast.
+  let joinSoundPlayed = false;
   $effect(() => {
     if (seat === 1 && gameStore.player2Joined) {
       showShareLink = false;
       showJoinToast = true;
-      playPlayerJoined();
+      if (!joinSoundPlayed) {
+        joinSoundPlayed = true;
+        playPlayerJoined();
+      }
       const t = setTimeout(() => { showJoinToast = false; }, 3000);
       return () => clearTimeout(t);
     }
@@ -286,12 +293,14 @@
     {#if resultMinimized}
       <div
         class="result-minimized"
-        in:receive={{ key: 'result' }}
-        out:send={{ key: 'result' }}
+        in:fly={{ y: 20, duration: 350, easing: cubicInOut }}
+        out:fly={{ y: 20, duration: 300, easing: cubicInOut }}
       >
-        <span class="minimized-title">
-          {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
-        </span>
+        <span
+          class="minimized-title"
+          in:receive={{ key: 'result-title' }}
+          out:send={{ key: 'result-title' }}
+        >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</span>
         <span class="minimized-scores">{score1} – {score2}</span>
         <button class="minimized-restore" onclick={() => resultMinimized = false}>View Results</button>
       </div>
@@ -299,13 +308,15 @@
       <div class="overlay" transition:fade={{ duration: 300 }}>
         <div
           class="result-card"
-          in:resultCardIn
-          out:send={{ key: 'result' }}
+          in:fly={{ y: 40, duration: 400, easing: cubicInOut }}
+          out:fly={{ y: 40, duration: 300, easing: cubicInOut }}
         >
           <button class="minimize-btn" onclick={() => resultMinimized = true} title="View board">⊟</button>
-          <div class="result-title">
-            {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
-          </div>
+          <div
+            class="result-title"
+            in:receive={{ key: 'result-title' }}
+            out:send={{ key: 'result-title' }}
+          >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</div>
 
           <!-- Score tables side by side -->
           <div class="result-tables">
