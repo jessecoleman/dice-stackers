@@ -102,11 +102,11 @@ export function createDieLabelTexture(value: number, textColor: string): THREE.C
   const isLight = textColor === '#ffffff' || textColor.toLowerCase() === '#fff';
   const grad = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.6);
   if (isLight) {
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.25)');
+    grad.addColorStop(0, 'rgba(0,0,0,0.18)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
   } else {
-    grad.addColorStop(0, 'rgba(255,255,255,0)');
-    grad.addColorStop(1, 'rgba(255,255,255,0.25)');
+    grad.addColorStop(0, 'rgba(255,255,255,0.18)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
   }
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, S, S);
