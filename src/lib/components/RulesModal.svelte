@@ -79,6 +79,15 @@
       <h3>Game End</h3>
       <p>When a player has no valid moves (no card can be played that leads to a legal die placement), the <em>other</em> player takes one final turn. The player with the higher total score wins.</p>
     </section>
+
+    <section>
+      <h3>Strategic Tips</h3>
+      <ul class="tips">
+        <li><strong>Mind the direction of your stacks.</strong> Descending edge slots reward opening with your highest-value cards, leaving room to add lower ones beneath them. Ascending slots work in reverse — seed them early with modest values so you have space to build upward as the game develops.</li>
+        <li><strong>Preserve your flexibility.</strong> Committing too many cards to a single row or column narrows your future options considerably. A hand full of cards is of little use if every slot that accepts them is already spoken for.</li>
+        <li><strong>Know your opponent's board as well as your own.</strong> Study which of their stacks are exposed and which are still open. A stack you cannot reach is a threat; one you can cover cheaply may be an opportunity. The player who accounts for their opponent's moves — not just their own — will find the endgame far less surprising.</li>
+      </ul>
+    </section>
   </div>
 </div>
 
@@ -155,6 +164,7 @@
   }
 
   li { margin-bottom: 3px; }
+  ul.tips li { margin-bottom: 10px; }
 
   strong { color: #ddd; }
   em { color: #aaa; font-style: normal; font-weight: 600; }

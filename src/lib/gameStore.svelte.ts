@@ -23,6 +23,7 @@ export type { Suit, Die, CellStack, Card, Edge, GameState, EventLogEntry };
 type HoverHighlight =
   | { type: 'cell'; row: number; col: number; dieId?: string }
   | { type: 'slot'; edge: Edge; index: 0 | 1 | 2 }
+  | { type: 'cells'; cells: Array<{ row: number; col: number }> }
   | null;
 
 function createGameStore() {
@@ -31,6 +32,7 @@ function createGameStore() {
   let roomId = $state<string | null>(null);
   let seat = $state<1 | 2 | null>(null);
   let hoverHighlight = $state<HoverHighlight>(null);
+  let tooltipText    = $state<string | null>(null);
 
   // Empty fallbacks so components don't have to null-check
   const emptyGrid: CellStack[][] = Array.from({ length: 3 }, (_, r) =>
@@ -80,8 +82,12 @@ function createGameStore() {
     get player2Name() { return serverState?.player2Name ?? 'Player 2'; },
     playerName(p: 1 | 2) { return p === 1 ? (serverState?.player1Name ?? 'Player 1') : (serverState?.player2Name ?? 'Player 2'); },
     get eventLog() { return serverState?.eventLog ?? []; },
+    get rematchRequestedBy() { return serverState?.rematchRequestedBy ?? null; },
+    get rematchRoomId() { return serverState?.rematchRoomId ?? null; },
     get hoverHighlight() { return hoverHighlight; },
     setHoverHighlight(h: HoverHighlight) { hoverHighlight = h; },
+    get tooltipText() { return tooltipText; },
+    setTooltip(text: string | null) { tooltipText = text; },
     get selectedCard() { return selectedCard; },
 
     // ── Client-only selection ───────────────────────────────────────────────
@@ -156,6 +162,21 @@ function createGameStore() {
         body: JSON.stringify({ player: seat, name }),
       });
       if (res.ok) serverState = await res.json();
+    },
+
+    /** Request or accept a rematch. Returns the new roomId if the rematch is ready. */
+    async rematch(): Promise<string | null> {
+      if (!roomId || seat === null) return null;
+      const res = await fetch(`/api/game/${roomId}/rematch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player: seat }),
+      });
+      if (res.ok) {
+        serverState = await res.json();
+        return serverState?.rematchRoomId ?? null;
+      }
+      return null;
     },
 
     /** Called by seat-2 page on mount to signal P2 has joined. */

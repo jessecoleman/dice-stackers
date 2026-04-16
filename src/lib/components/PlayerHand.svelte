@@ -1,12 +1,34 @@
 <script lang="ts">
   import Card from './Card.svelte';
   import { gameStore, type Card as CardType } from '$lib/gameStore.svelte';
+  import { flip } from 'svelte/animate';
+  import { fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
 
 
   let { player, showBacks = false }: { player: 1 | 2; showBacks?: boolean } = $props();
 
-  const hand     = $derived(player === 1 ? gameStore.player1Hand : gameStore.player2Hand);
+  const rawHand = $derived(player === 1 ? gameStore.player1Hand : gameStore.player2Hand);
   const isActive = $derived(gameStore.currentPlayer === player);
+
+  type SortMode = 'none' | 'suit-rank' | 'rank-suit';
+  let sortMode = $state<SortMode>('none');
+
+  const SUIT_ORDER: Record<string, number> = { red: 0, blue: 1, green: 2, yellow: 3 };
+
+  const hand = $derived.by(() => {
+    if (sortMode === 'suit-rank') {
+      return [...rawHand].sort((a, b) =>
+        SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.value - b.value
+      );
+    }
+    if (sortMode === 'rank-suit') {
+      return [...rawHand].sort((a, b) =>
+        a.value - b.value || SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit]
+      );
+    }
+    return rawHand;
+  });
 
   function cardRotation(i: number, total: number): number {
     if (total <= 1) return 0;
@@ -39,6 +61,10 @@
     {#if isActive && player === gameStore.seat && gameStore.pendingDiePlacement}
       <button class="cancel-btn" onclick={() => gameStore.cancelTurn()}>Cancel</button>
     {/if}
+    {#if !showBacks}
+      <button class="sort-btn" class:active={sortMode === 'suit-rank'} onclick={() => sortMode = sortMode === 'suit-rank' ? 'none' : 'suit-rank'}>S·R</button>
+      <button class="sort-btn" class:active={sortMode === 'rank-suit'} onclick={() => sortMode = sortMode === 'rank-suit' ? 'none' : 'rank-suit'}>R·S</button>
+    {/if}
   </div>
 
   <div class="fan">
@@ -48,6 +74,8 @@
       <div
         class="card-slot"
         style="transform: rotate({rot}deg) translateY({dy}px); z-index: {i}"
+        animate:flip={{ duration: 280, easing: cubicOut }}
+        in:fly={{ y: 40, duration: 240, easing: cubicOut }}
       >
         <Card
           {card}
@@ -225,5 +253,29 @@
   .cancel-btn:hover {
     background: rgba(229, 62, 62, 0.25);
     color: #ff8a80;
+  }
+
+  .sort-btn {
+    padding: 3px 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    color: #666;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .sort-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: #aaa;
+  }
+
+  .sort-btn.active {
+    background: rgba(255,215,0,0.12);
+    border-color: rgba(255,215,0,0.35);
+    color: #ffd700;
   }
 </style>

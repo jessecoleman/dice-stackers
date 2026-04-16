@@ -1,6 +1,7 @@
 <script lang="ts">
   import { T } from '@threlte/core';
   import { useCursor, RoundedBoxGeometry } from '@threlte/extras';
+  import { onMount } from 'svelte';
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
   import { createDieLabelTexture } from '$lib/utils/cardTexture';
@@ -47,7 +48,7 @@
   const ANIM = { duration: 300, easing: cubicOut };
   const dropY   = new Tween(1.0, { duration: 0 });
   const opacity = new Tween(0,   { duration: 0 });
-  $effect(() => {
+  onMount(() => {
     dropY.set(0,   ANIM);
     opacity.set(1, ANIM);
   });

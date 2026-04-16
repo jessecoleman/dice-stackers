@@ -1,5 +1,22 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { crossfade, fade } from 'svelte/transition';
+  import { cubicInOut, cubicOut } from 'svelte/easing';
+
+  const [send, receive] = crossfade({ duration: 450, easing: cubicInOut });
+
+  function resultCardIn(node: Element) {
+    return {
+      delay: 150,
+      duration: 500,
+      easing: cubicOut,
+      css: (t: number) => `
+        opacity: ${t};
+        transform: scale(${0.88 + 0.12 * t}) translateY(${(1 - t) * 28}px);
+      `,
+    };
+  }
   import { Canvas } from '@threlte/core';
   import Scene from '$lib/components/Scene.svelte';
   import PlayerHand from '$lib/components/PlayerHand.svelte';
@@ -9,6 +26,7 @@
   import RulesModal from '$lib/components/RulesModal.svelte';
   import NameModal from '$lib/components/NameModal.svelte';
   import { gameStore, suits } from '$lib/gameStore.svelte';
+  import { playYourTurnChime } from '$lib/utils/sounds';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -20,6 +38,16 @@
   // Initialise the store once on first render
   $effect.pre(() => {
     gameStore.init(data.roomId, data.seat, data.state);
+  });
+
+  // Chime when it becomes this player's turn (skip the very first render)
+  let prevCurrentPlayer = $state<number | null>(null);
+  $effect(() => {
+    const cur = gameStore.currentPlayer;
+    if (prevCurrentPlayer !== null && cur === seat && cur !== prevCurrentPlayer) {
+      playYourTurnChime();
+    }
+    prevCurrentPlayer = cur;
   });
 
   function onKeyDown(e: KeyboardEvent) {
@@ -58,15 +86,60 @@
 
   let resultMinimized = $state(false);
 
+  // ── Rematch ────────────────────────────────────────────────────────────────
+  let rematchPending = $state(false);
+
+  async function handleRematch() {
+    rematchPending = true;
+    const newRoomId = await gameStore.rematch();
+    if (newRoomId) {
+      // Seats swap: original P1 → seat 2, original P2 → seat 1
+      const newSeat = seat === 1 ? 2 : seat === 2 ? 1 : null;
+      const query = newSeat ? `?seat=${newSeat}` : '';
+      goto(`/game/${newRoomId}${query}`);
+    } else {
+      rematchPending = false;
+    }
+  }
+
+  // Redirect automatically when the other player accepts
+  $effect(() => {
+    const newRoomId = gameStore.rematchRoomId;
+    if (newRoomId && gameStore.gamePhase === 'game-over') {
+      const newSeat = seat === 1 ? 2 : seat === 2 ? 1 : null;
+      const query = newSeat ? `?seat=${newSeat}` : '';
+      goto(`/game/${newRoomId}${query}`);
+    }
+  });
+
+  // ── Last-turn toast ────────────────────────────────────────────────────────
+  let showLastTurnToast = $state(false);
+  let lastTurnToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $effect(() => {
+    if (gameStore.gamePhase === 'last-turn') {
+      showLastTurnToast = true;
+      if (lastTurnToastTimer) clearTimeout(lastTurnToastTimer);
+      lastTurnToastTimer = setTimeout(() => { showLastTurnToast = false; }, 6000);
+    }
+  });
+
+  onDestroy(() => { if (lastTurnToastTimer) clearTimeout(lastTurnToastTimer); });
+
+  const lastTurnPlayer   = $derived(gameStore.currentPlayer);
+  const stuckPlayer      = $derived<1 | 2>(lastTurnPlayer === 1 ? 2 : 1);
+
   // ── Polling ────────────────────────────────────────────────────────────────
   // Poll every second when it's not our seat's turn.
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
   $effect(() => {
-    const isMyTurn = seat !== null && gameStore.currentPlayer === seat;
-    const isOver   = gameStore.gamePhase === 'game-over';
+    const isMyTurn       = seat !== null && gameStore.currentPlayer === seat;
+    const isOver         = gameStore.gamePhase === 'game-over';
+    const rematchPending = isOver && !gameStore.rematchRoomId;
+    const needsPoll      = (!isMyTurn && !isOver) || rematchPending;
 
-    if (!isMyTurn && !isOver) {
+    if (needsPoll) {
       if (!pollInterval) {
         pollInterval = setInterval(() => gameStore.poll(), 1000);
       }
@@ -89,9 +162,16 @@
   // ── Camera controls ────────────────────────────────────────────────────────
   let resetSignal = $state(0);
   let topDown     = $state(false);
+  let flipped     = $state(false);
+
+  // ── Tooltip ────────────────────────────────────────────────────────────────
+  let mouseX = $state(0);
+  let mouseY = $state(0);
+  function onMouseMove(e: MouseEvent) { mouseX = e.clientX; mouseY = e.clientY; }
 
   function recenter() {
     topDown = false;
+    flipped = false;
     resetSignal++;
   }
 
@@ -109,17 +189,20 @@
 
   $effect.pre(() => {
     if (typeof localStorage === 'undefined') return;
-    const hasName  = !!localStorage.getItem('player-name');
-    const hasRules = !!localStorage.getItem(RULES_KEY);
+    const savedName = localStorage.getItem('player-name');
+    const hasRules  = !!localStorage.getItem(RULES_KEY);
 
-    if (seat !== null && !hasName) {
+    if (seat !== null && !savedName) {
       // Seated player hasn't set a name — prompt first, rules after if needed
       showNameModal = true;
       if (!hasRules) pendingRules = true;
-    } else if (!hasRules) {
-      // Name already set (or spectator) — show rules directly
-      showRules = true;
-      localStorage.setItem(RULES_KEY, '1');
+    } else {
+      // Name already saved — push it to the server so the opponent sees it
+      if (seat !== null && savedName) gameStore.setName(savedName);
+      if (!hasRules) {
+        showRules = true;
+        localStorage.setItem(RULES_KEY, '1');
+      }
     }
   });
 
@@ -162,7 +245,7 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<svelte:window onkeydown={onKeyDown} onmousemove={onMouseMove} />
 
 <div class="page">
 
@@ -181,15 +264,26 @@
     <div class="join-toast">Player 2 has joined!</div>
   {/if}
 
-  <!-- Last-turn banner -->
-  {#if gameStore.gamePhase === 'last-turn'}
-    <div class="phase-banner">Last turn for {gameStore.playerName(gameStore.currentPlayer)}!</div>
+  <!-- Last-turn toast -->
+  {#if showLastTurnToast}
+    <div class="last-turn-toast">
+      <span class="last-turn-icon">⚠</span>
+      <span>
+        <strong>{gameStore.playerName(stuckPlayer)}</strong> has no valid moves —
+        last turn for <strong>{gameStore.playerName(lastTurnPlayer)}</strong>!
+      </span>
+      <button class="last-turn-dismiss" onclick={() => showLastTurnToast = false}>✕</button>
+    </div>
   {/if}
 
   <!-- Game-over overlay -->
   {#if gameStore.gamePhase === 'game-over'}
     {#if resultMinimized}
-      <div class="result-minimized">
+      <div
+        class="result-minimized"
+        in:receive={{ key: 'result' }}
+        out:send={{ key: 'result' }}
+      >
         <span class="minimized-title">
           {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
         </span>
@@ -197,8 +291,12 @@
         <button class="minimized-restore" onclick={() => resultMinimized = false}>View Results</button>
       </div>
     {:else}
-      <div class="overlay">
-        <div class="result-card">
+      <div class="overlay" transition:fade={{ duration: 300 }}>
+        <div
+          class="result-card"
+          in:resultCardIn
+          out:send={{ key: 'result' }}
+        >
           <button class="minimize-btn" onclick={() => resultMinimized = true} title="View board">⊟</button>
           <div class="result-title">
             {winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}
@@ -249,7 +347,29 @@
             {/each}
           </div>
 
-          <a href="/" class="new-game-btn">New Game</a>
+          <div class="result-actions">
+            {#if seat !== null}
+              {#if gameStore.rematchRequestedBy === null || gameStore.rematchRequestedBy === seat}
+                <button
+                  class="rematch-btn"
+                  class:waiting={gameStore.rematchRequestedBy === seat}
+                  disabled={rematchPending || gameStore.rematchRequestedBy === seat}
+                  onclick={handleRematch}
+                >
+                  {#if gameStore.rematchRequestedBy === seat}
+                    Rematch requested — waiting for opponent…
+                  {:else}
+                    Suggest Rematch
+                  {/if}
+                </button>
+              {:else}
+                <button class="rematch-btn accept" onclick={handleRematch} disabled={rematchPending}>
+                  Accept Rematch
+                </button>
+              {/if}
+            {/if}
+            <a href="/" class="new-game-btn">New Game</a>
+          </div>
         </div>
       </div>
     {/if}
@@ -286,10 +406,11 @@
 
     <div class="canvas-wrapper">
       <Canvas shadows="soft">
-        <Scene {resetSignal} {topDown} />
+        <Scene {resetSignal} {topDown} {flipped} />
       </Canvas>
       <button class="recenter-btn" onclick={recenter} title="Recenter camera">⊕</button>
       <button class="topdown-btn" class:active={topDown} onclick={() => topDown = !topDown} title="Toggle top-down view">⊞</button>
+      <button class="flip-btn" class:active={flipped} onclick={() => flipped = !flipped} title="View from opponent's side">⇄</button>
     </div>
   </div>
 
@@ -297,6 +418,14 @@
   <div class="player-row">
     <PlayerHand player={myPlayer} showBacks={false} />
   </div>
+
+  <!-- Tooltip -->
+  {#if gameStore.tooltipText}
+    <div
+      class="tooltip"
+      style="left: {mouseX + 14}px; top: {mouseY - 10}px"
+    >{gameStore.tooltipText}</div>
+  {/if}
 
 </div>
 
@@ -435,6 +564,37 @@
     color: #ffd700;
   }
 
+  .flip-btn {
+    position: absolute;
+    bottom: 10px;
+    right: 78px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    z-index: 5;
+  }
+
+  .flip-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .flip-btn.active {
+    background: rgba(100, 180, 255, 0.15);
+    border-color: rgba(100, 180, 255, 0.4);
+    color: #64b4ff;
+  }
+
   .left-panel {
     display: flex;
     flex-direction: column;
@@ -524,23 +684,48 @@
     100% { opacity: 0; }
   }
 
-  .phase-banner {
+  .last-turn-toast {
     position: absolute;
-    top: 50%;
+    top: 12px;
     left: 50%;
-    translate: -50% -50%;
-    background: rgba(255, 180, 0, 0.15);
-    border: 1px solid rgba(255, 180, 0, 0.4);
+    translate: -50% 0;
+    background: rgba(30, 20, 5, 0.95);
+    border: 1px solid rgba(255, 180, 0, 0.45);
     color: #ffd700;
     font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 8px 20px;
-    border-radius: 20px;
-    pointer-events: none;
+    padding: 10px 14px 10px 12px;
+    border-radius: 10px;
     z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 90vw;
+    animation: toast-slide-in 0.3s ease;
   }
+
+  @keyframes toast-slide-in {
+    from { opacity: 0; translate: -50% -8px; }
+    to   { opacity: 1; translate: -50% 0; }
+  }
+
+  .last-turn-toast strong { color: #fff; }
+
+  .last-turn-icon {
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  .last-turn-dismiss {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.3);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
+
+  .last-turn-dismiss:hover { color: rgba(255,255,255,0.7); }
 
   .overlay {
     position: absolute;
@@ -731,6 +916,42 @@
 
   .new-game-btn:hover { opacity: 0.85; }
 
+  .result-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .rematch-btn {
+    padding: 11px 32px;
+    background: rgba(100, 180, 255, 0.15);
+    border: 1px solid rgba(100, 180, 255, 0.35);
+    border-radius: 30px;
+    color: #64b4ff;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .rematch-btn:hover:not(:disabled) { background: rgba(100, 180, 255, 0.25); }
+
+  .rematch-btn.accept {
+    background: rgba(56, 161, 105, 0.18);
+    border-color: rgba(56, 161, 105, 0.45);
+    color: #6ee7a0;
+  }
+
+  .rematch-btn.accept:hover:not(:disabled) { background: rgba(56, 161, 105, 0.3); }
+
+  .rematch-btn.waiting,
+  .rematch-btn:disabled { opacity: 0.55; cursor: default; }
+
   @media (max-width: 600px) {
     .result-tables { flex-direction: column; gap: 12px; }
     .result-card   { padding: 28px 16px 28px; }
@@ -764,5 +985,17 @@
       overflow-x: auto;
       padding: 0;
     }
+  }
+  .tooltip {
+    position: fixed;
+    background: rgba(10, 14, 26, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 11px;
+    padding: 5px 9px;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 200;
   }
 </style>

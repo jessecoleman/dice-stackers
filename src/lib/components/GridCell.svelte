@@ -26,7 +26,10 @@
     gameStore.hoverHighlight.row === row &&
     gameStore.hoverHighlight.col === col
       ? gameStore.hoverHighlight
-      : null
+      : gameStore.hoverHighlight?.type === 'cells' &&
+        gameStore.hoverHighlight.cells.some(c => c.row === row && c.col === col)
+        ? { type: 'cell' as const, row, col }
+        : null
   );
   const isNoPlacementWarning = $derived(gameStore.isCellNoPlacementWarning(row, col));
   const seatCanPlace = $derived(
@@ -58,7 +61,7 @@
   </T.Mesh>
 
   <!-- Stacked dice — non-interactive during die placement so clicks pass through -->
-  {#each stack as die, i}
+  {#each stack as die, i (die.id)}
     <Die3D
       {die}
       position={[0, 0.06 + DIE_SIZE / 2 + i * STACK_STEP, 0]}

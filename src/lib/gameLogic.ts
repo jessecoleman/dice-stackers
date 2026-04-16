@@ -38,6 +38,14 @@ export interface EventLogEntry {
   slot?: { edge: Edge; index: 0 | 1 | 2 };
   cell?: { row: number; col: number };
   dieId?: string;
+  dieValue?: number;
+  dieColor?: string;
+  prevDieValue?: number;
+  prevDieColor?: string;
+  cardValue?: number;
+  cardSuit?: string;
+  prevCardValue?: number;
+  prevCardSuit?: string;
 }
 
 export interface GameState {
@@ -54,6 +62,8 @@ export interface GameState {
   player1Name: string;
   player2Name: string;
   eventLog: EventLogEntry[];
+  rematchRequestedBy?: 1 | 2;
+  rematchRoomId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -259,9 +269,10 @@ export function applyAction(
       if (idx === -1) return { state, error: 'Card not in hand' };
       hand.splice(idx, 1);
 
+      const prevCard = s.cardSlots[slotKey(edge, index)].at(-1);
       s.cardSlots[slotKey(edge, index)].push(card);
       s.pendingDiePlacement = { card, edge, index };
-      s.eventLog.push({ player, action: 'played', detail: `${card.suit} ${card.value} → ${edge}-${index}`, timestamp: Date.now(), slot: { edge, index } });
+      s.eventLog.push({ player, action: 'played', detail: '', timestamp: Date.now(), slot: { edge, index }, cardSuit: card.suit, cardValue: card.value, prevCardSuit: prevCard?.suit, prevCardValue: prevCard?.value });
       s.updatedAt = Date.now();
       return { state: s };
     }
@@ -273,6 +284,7 @@ export function applyAction(
         return { state, error: 'Invalid cell for die placement' };
       }
       const { card, edge: dieEdge } = s.pendingDiePlacement;
+      const prevDie = s.grid[row][col].dice.at(-1);
       s.grid[row][col].dice.push({
         id: `die-${card.suit}-${card.value}-${Date.now()}`,
         color: card.suit,
@@ -282,7 +294,7 @@ export function applyAction(
       });
       const placedDieId = s.grid[row][col].dice[s.grid[row][col].dice.length - 1].id;
       s.pendingDiePlacement = null;
-      s.eventLog.push({ player, action: 'placed', detail: `die at (${row}, ${col})`, timestamp: Date.now(), cell: { row, col }, dieId: placedDieId });
+      s.eventLog.push({ player, action: 'placed', detail: '', timestamp: Date.now(), cell: { row, col }, dieId: placedDieId, dieColor: card.suit, dieValue: card.value, prevDieValue: prevDie?.value, prevDieColor: prevDie?.color });
       s.updatedAt = Date.now();
       return { state: advanceTurn(s) };
     }
@@ -306,7 +318,7 @@ export function applyAction(
       const hand = player === 1 ? s.player1Hand : s.player2Hand;
       hand.push(card);
       s.pendingDiePlacement = null;
-      s.eventLog.push({ player, action: 'cancelled', detail: `${card.suit} ${card.value}`, timestamp: Date.now() });
+      s.eventLog.push({ player, action: 'cancelled', detail: '', timestamp: Date.now(), cardSuit: card.suit, cardValue: card.value });
       s.updatedAt = Date.now();
       return { state: s };
     }

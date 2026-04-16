@@ -2,7 +2,7 @@
   import { T } from '@threlte/core';
   import * as THREE from 'three';
   import { gameStore, PLAYER_EDGES, type Edge } from '$lib/gameStore.svelte';
-  import CardFace3D from './CardFace3D.svelte';
+  import CardSlotCard from './CardSlotCard.svelte';
 
   let { edge, index }: { edge: Edge; index: 0 | 1 | 2 } = $props();
 
@@ -144,35 +144,20 @@
   {/if}
 
   <!-- Stacked card quads ─────────────────────────────────────────────────── -->
-  {#each cards as card, i}
-    {@const y = 0.008 + i * CARD_GAP}
-    {@const ox = i * CARD_SPREAD * spreadX}
-    {@const oz = i * CARD_SPREAD * spreadZ}
-    <!-- Card body (suit-coloured sides give depth, rounded corners) -->
-    {#if (isHorizEdge ? horizCardGeo : vertCardGeo)}
-      <T.Mesh
-        geometry={isHorizEdge ? horizCardGeo! : vertCardGeo!}
-        position={[ox, y, oz]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      >
-        <T.MeshStandardMaterial
-          color={SUIT_COLOR[card.suit] ?? '#888'}
-          roughness={0.45}
-          metalness={0.05}
-          emissive={isLogHovered ? '#ffffff' : '#000000'}
-          emissiveIntensity={isLogHovered ? 0.7 : 0}
-        />
-      </T.Mesh>
-    {/if}
-    <!-- Card face texture (number + suit) -->
-    <CardFace3D
+  {#each cards as card, i (card.id)}
+    <CardSlotCard
       {card}
-      width={isHorizEdge ? cardW : cardD}
-      depth={isHorizEdge ? cardD : cardW}
-      surfaceY={y + CARD_H / 2}
-      {ox}
-      {oz}
-      rotationZ={faceRotZ}
+      cardGeo={isHorizEdge ? horizCardGeo : vertCardGeo}
+      {cardW}
+      {cardD}
+      {isHorizEdge}
+      y={0.008 + i * CARD_GAP}
+      ox={i * CARD_SPREAD * spreadX}
+      oz={i * CARD_SPREAD * spreadZ}
+      {faceRotZ}
+      cardH={CARD_H}
+      suitColor={SUIT_COLOR[card.suit] ?? '#888'}
+      {isLogHovered}
     />
   {/each}
 

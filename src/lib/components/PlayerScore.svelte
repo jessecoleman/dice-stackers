@@ -80,6 +80,41 @@
     prevTotal = currentTotal;
   });
 
+  // ── Score hover helpers ───────────────────────────────────────────────────
+  function suitCells(suit: string) {
+    return gameStore.grid.flat().filter(c => {
+      const top = c.dice[c.dice.length - 1];
+      return top && top.player === player && top.color === suit;
+    }).map(c => ({ row: c.row, col: c.col }));
+  }
+
+  function pipCells(suit: string, maxPips: number) {
+    return gameStore.grid.flat().filter(c => {
+      const top = c.dice[c.dice.length - 1];
+      return top && top.player === player && top.color === suit && top.value === maxPips;
+    }).map(c => ({ row: c.row, col: c.col }));
+  }
+
+  function tallestCells(suit: string, tallestStack: number) {
+    return gameStore.grid.flat().filter(c => {
+      const top = c.dice[c.dice.length - 1];
+      return top && top.player === player && top.color === suit && c.dice.length === tallestStack;
+    }).map(c => ({ row: c.row, col: c.col }));
+  }
+
+  function allOwnedCells() {
+    return gameStore.grid.flat().filter(c => {
+      const top = c.dice[c.dice.length - 1];
+      return top && top.player === player;
+    }).map(c => ({ row: c.row, col: c.col }));
+  }
+
+  function highlight(cells: Array<{ row: number; col: number }>) {
+    if (cells.length) gameStore.setHoverHighlight({ type: 'cells', cells });
+  }
+
+  function clearHighlight() { gameStore.setHoverHighlight(null); }
+
   function onBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) modalOpen = false;
   }
@@ -110,22 +145,38 @@
     <tbody>
       {#each rows as row}
         <tr class:zero={row.score === 0}>
-          <td class="suit" style="color: {SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
+          <td class="suit" style="color: {SUIT_COLOR[row.suit]}"
+              class:hoverable={row.score > 0}
+              onmouseenter={() => highlight(suitCells(row.suit))}
+              onmouseleave={clearHighlight}
+          >{SUIT_SYMBOL[row.suit]}</td>
           <td class:flash-up={flashStates[`${row.suit}-maxPips`] === 'up'}
               class:flash-down={flashStates[`${row.suit}-maxPips`] === 'down'}
+              class:hoverable={row.maxPips > 0}
+              onmouseenter={() => highlight(pipCells(row.suit, row.maxPips))}
+              onmouseleave={clearHighlight}
           >{Math.round(tweens[`${row.suit}-maxPips`].current) || '—'}</td>
           <td class="op">×</td>
           <td class:flash-up={flashStates[`${row.suit}-tallestStack`] === 'up'}
               class:flash-down={flashStates[`${row.suit}-tallestStack`] === 'down'}
+              class:hoverable={row.tallestStack > 0}
+              onmouseenter={() => highlight(tallestCells(row.suit, row.tallestStack))}
+              onmouseleave={clearHighlight}
           >{Math.round(tweens[`${row.suit}-tallestStack`].current) || '—'}</td>
           <td class="op">×</td>
           <td class:flash-up={flashStates[`${row.suit}-numStacks`] === 'up'}
               class:flash-down={flashStates[`${row.suit}-numStacks`] === 'down'}
+              class:hoverable={row.numStacks > 0}
+              onmouseenter={() => highlight(suitCells(row.suit))}
+              onmouseleave={clearHighlight}
           >{Math.round(tweens[`${row.suit}-numStacks`].current) || '—'}</td>
           <td class="op">=</td>
           <td class="score"
               class:flash-up={flashStates[`${row.suit}-score`] === 'up'}
               class:flash-down={flashStates[`${row.suit}-score`] === 'down'}
+              class:hoverable={row.score > 0}
+              onmouseenter={() => highlight(suitCells(row.suit))}
+              onmouseleave={clearHighlight}
           >{Math.round(tweens[`${row.suit}-score`].current) || '—'}</td>
         </tr>
       {/each}
@@ -136,6 +187,9 @@
         <td class="total-score"
             class:flash-up={flashTotal === 'up'}
             class:flash-down={flashTotal === 'down'}
+            class:hoverable={total > 0}
+            onmouseenter={() => highlight(allOwnedCells())}
+            onmouseleave={clearHighlight}
         >{Math.round(tweens['total'].current)}</td>
       </tr>
     </tfoot>
@@ -292,6 +346,7 @@
   }
 
   td:first-child { text-align: left; }
+  td.hoverable { cursor: crosshair; }
 
   .op {
     color: #444;

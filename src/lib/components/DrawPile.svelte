@@ -1,11 +1,14 @@
 <script lang="ts">
   import { gameStore } from '$lib/gameStore.svelte';
+  import Card from './Card.svelte';
 
-  const remaining = $derived(gameStore.drawPile.length);
-  const canDraw   = $derived(remaining > 0);
+  const remaining  = $derived(gameStore.drawPile.length);
+  const myHand     = $derived(gameStore.seat === 2 ? gameStore.player2Hand : gameStore.player1Hand);
+  const handFull   = $derived(myHand.length >= 6);
+  const canDraw    = $derived(remaining > 0 && !handFull);
 
-  // Stack visual offsets for the top few cards
   const STACK_LAYERS = 4;
+  const topCards = $derived(gameStore.drawPile.slice(0, STACK_LAYERS));
 </script>
 
 <div class="draw-pile-area">
@@ -13,22 +16,20 @@
 
   <button
     class="pile"
-    class:empty={!canDraw}
+    class:empty={!remaining}
+    class:disabled={!canDraw}
     onclick={() => gameStore.drawToSix()}
     disabled={!canDraw}
-    title={canDraw ? 'Draw a card' : 'Pile is empty'}
+    title={!remaining ? 'Pile is empty' : handFull ? 'Hand is full' : 'Draw up to 6 cards'}
   >
     <!-- Stacked card backs for depth -->
-    {#each Array.from({ length: Math.min(STACK_LAYERS, remaining) }) as _, i}
-      <div
-        class="pile-card"
-        style="bottom: {i * 2.5}px; left: {i * -1}px;"
-      >
-        <div class="back-pattern"></div>
+    {#each topCards as card, i}
+      <div class="pile-card" style="bottom: {i * 2.5}px; left: {i * -1}px;">
+        <Card {card} faceDown={true} />
       </div>
     {/each}
 
-    {#if canDraw}
+    {#if remaining}
       <div class="count-badge">{remaining}</div>
     {:else}
       <div class="empty-label">Empty</div>
@@ -67,41 +68,22 @@
     opacity: 0.4;
   }
 
+  .pile.disabled:not(.empty) {
+    cursor: default;
+    opacity: 0.6;
+  }
+
   .pile-card {
     position: absolute;
     width: 64px;
     height: 92px;
-    border-radius: 8px;
-    background: #1e3a5f;
-    border: 1px solid #2d5a8e;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    overflow: hidden;
     transition: transform 0.15s;
   }
 
-  .pile:not(.empty):hover .pile-card:last-of-type {
+  .pile:not(.empty):not(.disabled):hover .pile-card:last-of-type {
     transform: translateY(-4px);
   }
 
-  .back-pattern {
-    width: 100%;
-    height: 100%;
-    background-image:
-      repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.05) 0px,
-        rgba(255,255,255,0.05) 2px,
-        transparent 2px,
-        transparent 8px
-      ),
-      repeating-linear-gradient(
-        -45deg,
-        rgba(255,255,255,0.05) 0px,
-        rgba(255,255,255,0.05) 2px,
-        transparent 2px,
-        transparent 8px
-      );
-  }
 
   .count-badge {
     position: absolute;

@@ -1,18 +1,16 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { gameStore, type EventLogEntry } from '$lib/gameStore.svelte';
 
   const SUIT_COLORS: Record<string, string> = {
-    red: '#f87171',
-    blue: '#60a5fa',
-    green: '#4ade80',
-    yellow: '#facc15',
+    red: '#f87171', blue: '#60a5fa', green: '#4ade80', yellow: '#facc15',
+  };
+  const SUIT_SYMBOLS: Record<string, string> = {
+    red: '♥', blue: '♦', green: '♣', yellow: '★',
   };
 
-  function suitColor(detail: string): string {
-    for (const suit of ['red', 'blue', 'green', 'yellow']) {
-      if (detail.startsWith(suit)) return SUIT_COLORS[suit];
-    }
-    return '#ccc';
+  function suitColor(suit: string | undefined): string {
+    return suit ? (SUIT_COLORS[suit] ?? '#ccc') : '#ccc';
   }
 
   function actionLabel(entry: EventLogEntry): string {
@@ -24,12 +22,17 @@
     }
   }
 
-  function formatTime(ts: number): string {
-    const d = new Date(ts);
-    const h = d.getHours().toString().padStart(2, '0');
-    const m = d.getMinutes().toString().padStart(2, '0');
-    const s = d.getSeconds().toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
+  let now = $state(Date.now());
+  const ticker = setInterval(() => { now = Date.now(); }, 5000);
+  onDestroy(() => clearInterval(ticker));
+
+  function timeAgo(ts: number): string {
+    const s = Math.floor((now - ts) / 1000);
+    if (s < 10)  return 'just now';
+    if (s < 60)  return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60)  return `${m}m ago`;
+    return `${Math.floor(m / 60)}h ago`;
   }
 
   let listEl       = $state<HTMLUListElement | null>(null);
@@ -70,11 +73,29 @@
         }}
         onmouseleave={() => gameStore.setHoverHighlight(null)}
       >
-        <span class="timestamp">{formatTime(entry.timestamp)}</span>
+        <span class="timestamp">{timeAgo(entry.timestamp)}</span>
         <span class="player-tag">P{entry.player}</span>
         <span class="action">{actionLabel(entry)}</span>
-        <span class="detail" style:color={entry.action === 'played' || entry.action === 'cancelled' ? suitColor(entry.detail) : 'inherit'}>
-          {entry.detail}
+        <span class="detail">
+          {#if entry.action === 'placed'}
+            <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
+            <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
+            {#if entry.prevDieColor != null}
+              <span class="on">on</span>
+              <span style:color={suitColor(entry.prevDieColor)}>{entry.prevDieValue}</span>
+              <span class="die-cube" style:background={SUIT_COLORS[entry.prevDieColor]}></span>
+            {/if}
+          {:else if entry.action === 'played'}
+            <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+            {#if entry.prevCardSuit != null}
+              <span class="on">on</span>
+              <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
+            {/if}
+          {:else if entry.action === 'cancelled'}
+            <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+          {:else}
+            {entry.detail}
+          {/if}
         </span>
       </li>
     {/each}
@@ -107,11 +128,29 @@
             class:p1={entry.player === 1}
             class:p2={entry.player === 2}
           >
-            <span class="timestamp">{formatTime(entry.timestamp)}</span>
+            <span class="timestamp">{timeAgo(entry.timestamp)}</span>
             <span class="player-tag">P{entry.player}</span>
             <span class="action">{actionLabel(entry)}</span>
-            <span class="detail" style:color={entry.action === 'played' || entry.action === 'cancelled' ? suitColor(entry.detail) : 'inherit'}>
-              {entry.detail}
+            <span class="detail">
+              {#if entry.action === 'placed'}
+                <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
+                <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
+                {#if entry.prevDieColor != null}
+                  <span class="on">on</span>
+                  <span style:color={suitColor(entry.prevDieColor)}>{entry.prevDieValue}</span>
+                  <span class="die-cube" style:background={SUIT_COLORS[entry.prevDieColor]}></span>
+                {/if}
+              {:else if entry.action === 'played'}
+                <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+                {#if entry.prevCardSuit != null}
+                  <span class="on">on</span>
+                  <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
+                {/if}
+              {:else if entry.action === 'cancelled'}
+                <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+              {:else}
+                {entry.detail}
+              {/if}
             </span>
           </li>
         {/each}
@@ -197,6 +236,23 @@
   .detail {
     color: #ccc;
     word-break: break-word;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .on {
+    color: rgba(255,255,255,0.3);
+    font-size: 9px;
+  }
+
+  .die-cube {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
   }
 
   .log-empty {
