@@ -24,7 +24,7 @@
   >
     <!-- Stacked card backs for depth -->
     {#each topCards as card, i}
-      <div class="pile-card" style="bottom: {i * 2.5}px; left: {i * -1}px;">
+      <div class="pile-card" style="bottom: {i * 2.5}px; left: {i * -1}px; z-index: {i};">
         <Card {card} faceDown={true} />
       </div>
     {/each}
