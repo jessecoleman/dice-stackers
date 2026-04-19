@@ -36,7 +36,7 @@
   import EventLog from '$lib/components/EventLog.svelte';
   import RulesModal from '$lib/components/RulesModal.svelte';
   import NameModal from '$lib/components/NameModal.svelte';
-  import { gameStore, suits } from '$lib/gameStore.svelte';
+  import { gameStore } from '$lib/gameStore.svelte';
   import { playYourTurnChime, playPlayerJoined } from '$lib/utils/sounds';
   import type { PageData } from './$types';
 
@@ -72,25 +72,9 @@
     red: '♥', green: '♣', yellow: '★', blue: '♦',
   };
 
-  function calcRows(player: 1 | 2) {
-    return suits.map(suit => {
-      const stacks = gameStore.grid.flat()
-        .map(c => c.dice)
-        .filter(stack => {
-          const top = stack[stack.length - 1];
-          return top && top.player === player && top.color === suit;
-        });
-      const numStacks    = stacks.length;
-      const tallestStack = stacks.reduce((m, s) => Math.max(s.length, m), 0);
-      const maxPips      = stacks.reduce((m, s) => Math.max(s[s.length - 1].value, m), 0);
-      return { suit, numStacks, tallestStack, maxPips, score: numStacks * tallestStack * maxPips };
-    });
-  }
-
-  const rows1  = $derived(calcRows(1));
-  const rows2  = $derived(calcRows(2));
-  const score1 = $derived(rows1.reduce((s, r) => s + r.score, 0));
-  const score2 = $derived(rows2.reduce((s, r) => s + r.score, 0));
+  const suitKeys = ['red', 'green', 'yellow', 'blue'] as const;
+  const score1 = $derived(Math.min(...suitKeys.map(k => gameStore.scores1[k])));
+  const score2 = $derived(Math.min(...suitKeys.map(k => gameStore.scores2[k])));
   const winner = $derived(
     score1 > score2 ? 1 : score2 > score1 ? 2 : null
   );
@@ -348,40 +332,29 @@
           <!-- Score tables side by side -->
           <div class="result-tables">
             {#each ([1, 2] as const) as p}
-              {@const rows = p === 1 ? rows1 : rows2}
+              {@const sc = p === 1 ? gameStore.scores1 : gameStore.scores2}
               {@const total = p === 1 ? score1 : score2}
               <div class="result-table-wrap" class:result-winner-col={winner === p}>
                 <div class="result-table-name">{gameStore.playerName(p)}</div>
                 <table class="result-table">
                   <thead>
-                    <tr>
-                      <th></th>
-                      <th>Pips</th>
-                      <th class="op">×</th>
-                      <th>Ht</th>
-                      <th class="op">×</th>
-                      <th>St</th>
-                      <th class="op">=</th>
-                      <th>Pts</th>
-                    </tr>
+                    <tr><th></th><th>Pts</th></tr>
                   </thead>
                   <tbody>
-                    {#each rows as row}
-                      <tr class:zero={row.score === 0}>
-                        <td class="suit" style="color:{SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
-                        <td>{row.maxPips || '—'}</td>
-                        <td class="op">×</td>
-                        <td>{row.tallestStack || '—'}</td>
-                        <td class="op">×</td>
-                        <td>{row.numStacks || '—'}</td>
-                        <td class="op">=</td>
-                        <td class="pts">{row.score || '—'}</td>
+                    {#each (['red','green','yellow','blue'] as const) as suit}
+                      <tr class:zero={sc[suit] === 0}>
+                        <td class="suit" style="color:{SUIT_COLOR[suit]}">{SUIT_SYMBOL[suit]}</td>
+                        <td class="pts">{sc[suit] || '—'}</td>
                       </tr>
                     {/each}
+                    <tr class:zero={sc.wild === 0}>
+                      <td class="suit" style="color:#aaa">★</td>
+                      <td class="pts">{sc.wild || '—'}</td>
+                    </tr>
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colspan="7" class="total-label">Total</td>
+                      <td class="total-label">Total</td>
                       <td class="total-pts">{total}</td>
                     </tr>
                   </tfoot>
@@ -882,12 +855,6 @@
   .result-table td:first-child { text-align: left; }
   .result-table th:first-child { text-align: left; }
 
-  .result-table .op {
-    color: #444;
-    font-size: 8px;
-    padding: 0 1px;
-    text-align: center;
-  }
 
   .result-table .suit { font-size: 13px; }
   .result-table .pts  { font-weight: 600; color: #ccc; }

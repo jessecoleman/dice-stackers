@@ -3,43 +3,73 @@
   import Card from './Card.svelte';
   import emptyStackUrl from '$lib/assets/empty-stack.svg?url';
 
-  const remaining  = $derived(gameStore.drawPile.length);
-  const myHand     = $derived(gameStore.seat === 2 ? gameStore.player2Hand : gameStore.player1Hand);
-  const handFull   = $derived(myHand.length >= 6);
-  const canDraw    = $derived(remaining > 0 && !handFull);
+  const drawRemaining  = $derived(gameStore.drawPile.length);
+  const discardCount   = $derived(gameStore.discardPile.length);
+  const topDiscard     = $derived(gameStore.discardPile[discardCount - 1] ?? null);
+
+  const myHand  = $derived(gameStore.seat === 2 ? gameStore.player2Hand : gameStore.player1Hand);
+  const handFull = $derived(myHand.length >= 6);
+  const canDraw  = $derived(
+    (drawRemaining > 0 || discardCount > 0) && !handFull
+  );
 
   const STACK_LAYERS = 4;
   const topCards = $derived(gameStore.drawPile.slice(0, STACK_LAYERS));
 </script>
 
-<div class="draw-pile-area">
-  <div class="pile-label">Draw Pile</div>
+<div class="piles-row">
+  <!-- Draw pile -->
+  <div class="pile-area">
+    <div class="pile-label">Draw</div>
+    <button
+      class="pile"
+      class:empty={!drawRemaining && !discardCount}
+      class:disabled={!canDraw}
+      onclick={() => gameStore.drawToSix()}
+      disabled={!canDraw}
+      title={!drawRemaining && !discardCount ? 'No cards left' : handFull ? 'Hand is full' : 'Draw up to 6 cards'}
+    >
+      {#each topCards as card, i}
+        <div class="pile-card" style="bottom: {i * 2.5}px; left: {i * -1}px; z-index: {i};">
+          <Card {card} faceDown={true} />
+        </div>
+      {/each}
 
-  <button
-    class="pile"
-    class:empty={!remaining}
-    class:disabled={!canDraw}
-    onclick={() => gameStore.drawToSix()}
-    disabled={!canDraw}
-    title={!remaining ? 'Pile is empty' : handFull ? 'Hand is full' : 'Draw up to 6 cards'}
-  >
-    <!-- Stacked card backs for depth -->
-    {#each topCards as card, i}
-      <div class="pile-card" style="bottom: {i * 2.5}px; left: {i * -1}px; z-index: {i};">
-        <Card {card} faceDown={true} />
-      </div>
-    {/each}
+      {#if drawRemaining}
+        <div class="count-badge">{drawRemaining}</div>
+      {:else}
+        <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
+      {/if}
+    </button>
+  </div>
 
-    {#if remaining}
-      <div class="count-badge">{remaining}</div>
-    {:else}
-      <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
-    {/if}
-  </button>
+  <!-- Discard pile -->
+  <div class="pile-area">
+    <div class="pile-label">Discard</div>
+    <div class="pile non-interactive" class:empty={!discardCount}>
+      {#if topDiscard}
+        <div class="pile-card" style="bottom: 0; left: 0; z-index: 1;">
+          <Card card={topDiscard} faceDown={false} />
+        </div>
+        {#if discardCount > 1}
+          <div class="count-badge">{discardCount}</div>
+        {/if}
+      {:else}
+        <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
+      {/if}
+    </div>
+  </div>
 </div>
 
 <style>
-  .draw-pile-area {
+  .piles-row {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .pile-area {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -64,6 +94,10 @@
     cursor: pointer;
   }
 
+  .pile.non-interactive {
+    cursor: default;
+  }
+
   .pile.empty {
     cursor: default;
     opacity: 0.4;
@@ -81,10 +115,9 @@
     transition: transform 0.15s;
   }
 
-  .pile:not(.empty):not(.disabled):hover .pile-card:last-of-type {
+  .pile:not(.empty):not(.disabled):not(.non-interactive):hover .pile-card:last-of-type {
     transform: translateY(-4px);
   }
-
 
   .count-badge {
     position: absolute;

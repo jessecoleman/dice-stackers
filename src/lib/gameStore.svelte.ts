@@ -12,11 +12,15 @@ import {
   type GameState,
   type EventLogEntry,
   type Action,
+  type Scores,
+  type ScoreKey,
   PLAYER_EDGES,
 } from '$lib/gameLogic';
 
 export { suits, PLAYER_EDGES };
-export type { Suit, Die, CellStack, Card, Edge, GameState, EventLogEntry };
+export type { Suit, Die, CellStack, Card, Edge, GameState, EventLogEntry, Scores, ScoreKey };
+
+const _emptyScores = (): Scores => ({ red: 0, blue: 0, green: 0, yellow: 0, wild: 0 });
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -73,15 +77,20 @@ function createGameStore() {
     get player1Hand() { return serverState?.player1Hand ?? []; },
     get player2Hand() { return serverState?.player2Hand ?? []; },
     get drawPile() { return serverState?.drawPile ?? []; },
+    get discardPile() { return serverState?.discardPile ?? []; },
     get cardSlots() { return serverState?.cardSlots ?? {}; },
     get currentPlayer() { return serverState?.currentPlayer ?? 1; },
     get pendingDiePlacement() { return serverState?.pendingDiePlacement ?? null; },
+    get actionsRemaining(): 1 | 2 { return serverState?.actionsRemaining ?? 2; },
+    get usedSlotThisTurn() { return serverState?.usedSlotThisTurn ?? null; },
     get gamePhase() { return serverState?.phase ?? 'playing'; },
     get player2Joined() { return serverState?.player2Joined ?? false; },
     get player1Name() { return serverState?.player1Name ?? 'Player 1'; },
     get player2Name() { return serverState?.player2Name ?? 'Player 2'; },
     playerName(p: 1 | 2) { return p === 1 ? (serverState?.player1Name ?? 'Player 1') : (serverState?.player2Name ?? 'Player 2'); },
     get eventLog() { return serverState?.eventLog ?? []; },
+    get scores1(): Scores { return serverState?.scores1 ?? _emptyScores(); },
+    get scores2(): Scores { return serverState?.scores2 ?? _emptyScores(); },
     get rematchRequestedBy() { return serverState?.rematchRequestedBy ?? null; },
     get rematchRoomId() { return serverState?.rematchRoomId ?? null; },
     get hoverHighlight() { return hoverHighlight; },

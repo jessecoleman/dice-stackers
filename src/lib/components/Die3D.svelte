@@ -12,11 +12,13 @@
     position = [0, 0, 0],
     interactive = true,
     highlighted = false,
+    skipIntro = false,
   }: {
     die: Die;
     position?: [number, number, number];
     interactive?: boolean;
     highlighted?: boolean;
+    skipIntro?: boolean;
   } = $props();
 
   const { onPointerEnter, onPointerLeave } = useCursor();
@@ -49,8 +51,13 @@
   const dropY   = new Tween(1.0, { duration: 0 });
   const opacity = new Tween(0,   { duration: 0 });
   onMount(() => {
-    dropY.set(0,   ANIM);
-    opacity.set(1, ANIM);
+    if (skipIntro) {
+      dropY.set(0,   { duration: 0 });
+      opacity.set(1, { duration: 0 });
+    } else {
+      dropY.set(0,   ANIM);
+      opacity.set(1, ANIM);
+    }
   });
 </script>
 

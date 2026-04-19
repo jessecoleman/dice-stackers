@@ -54,8 +54,12 @@
       <span class="pip-dot"></span>
     </span>
     {gameStore.playerName(player)}
-    {#if isActive}<span class="turn-dot"></span>{/if}
-    {#if isActive && player === gameStore.seat && !gameStore.pendingDiePlacement && gameStore.drawPile.length > 0}
+    {#if isActive}
+      {#each { length: gameStore.actionsRemaining } as _}
+        <span class="turn-dot"></span>
+      {/each}
+    {/if}
+    {#if isActive && player === gameStore.seat && !gameStore.pendingDiePlacement && (gameStore.drawPile.length > 0 || gameStore.discardPile.length > 0)}
       <button class="draw-btn" onclick={() => gameStore.drawToSix()}>Draw to 6</button>
     {/if}
     {#if isActive && player === gameStore.seat && gameStore.pendingDiePlacement}

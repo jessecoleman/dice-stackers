@@ -1,46 +1,7 @@
 <script lang="ts">
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
-  import { gameStore, suits } from '$lib/gameStore.svelte';
-  import { computePosition, offset, flip, shift } from '@floating-ui/dom';
-
-  // Svelte action: positions a tooltip element relative to its anchor using Floating UI.
-  function tooltip(anchor: HTMLElement, text: string) {
-    const tip = document.createElement('div');
-    tip.className = 'fl-tooltip';
-    tip.textContent = text;
-    tip.style.cssText = 'position:fixed;z-index:999;pointer-events:none;opacity:0;transition:opacity 0.15s;';
-    document.body.appendChild(tip);
-
-    async function position() {
-      const { x, y } = await computePosition(anchor, tip, {
-        placement: 'top',
-        middleware: [offset(6), flip(), shift({ padding: 8 })],
-      });
-      tip.style.left = `${x}px`;
-      tip.style.top  = `${y}px`;
-    }
-
-    function show() { position(); tip.style.opacity = '1'; }
-    function hide() { tip.style.opacity = '0'; }
-
-    anchor.addEventListener('mouseenter', show);
-    anchor.addEventListener('mouseleave', hide);
-    anchor.addEventListener('focus',      show);
-    anchor.addEventListener('blur',       hide);
-
-    return {
-      update(newText: string) { tip.textContent = newText; },
-      destroy() {
-        anchor.removeEventListener('mouseenter', show);
-        anchor.removeEventListener('mouseleave', hide);
-        anchor.removeEventListener('focus',      show);
-        anchor.removeEventListener('blur',       hide);
-        tip.remove();
-      },
-    };
-  }
-
+  import { gameStore, suits, type ScoreKey } from '$lib/gameStore.svelte';
 
   let { player }: { player: 1 | 2 } = $props();
 
@@ -51,107 +12,53 @@
     red: '♥', green: '♣', yellow: '★', blue: '♦',
   };
 
-  const diceStacks = $derived(gameStore.grid.flat().map(c => c.dice));
+  const SCORE_KEYS: ScoreKey[] = [...suits, 'wild'];
 
-  const rows = $derived(suits.map(suit => {
-    const stacks = diceStacks.filter(stack => {
-      const top = stack[stack.length - 1];
-      return top && top.player === player && top.color === suit;
-    });
-    const numStacks    = stacks.length;
-    const tallestStack = stacks.reduce((m, s) => Math.max(s.length, m), 0);
-    const maxPips      = stacks.reduce((m, s) => Math.max(s[s.length - 1].value, m), 0);
-    return { suit, numStacks, tallestStack, maxPips, score: numStacks * tallestStack * maxPips };
-  }));
-
-  const total = $derived(rows.reduce((sum, r) => sum + r.score, 0));
+  const scores = $derived(player === 1 ? gameStore.scores1 : gameStore.scores2);
+  const total  = $derived(Math.min(...suits.map(s => scores[s])));
 
   // ── Flash + tween tracking ────────────────────────────────────────────────────
   type FlashDir = 'up' | 'down' | null;
-  type RowCol = 'maxPips' | 'tallestStack' | 'numStacks' | 'score';
-
-  const COLS: RowCol[] = ['maxPips', 'tallestStack', 'numStacks', 'score'];
   const TWEEN_OPTS = { duration: 600, easing: cubicOut };
 
   const tweens: Record<string, Tween<number>> = {};
-  for (const suit of suits) {
-    for (const col of COLS) {
-      tweens[`${suit}-${col}`] = new Tween(0, TWEEN_OPTS);
-    }
-  }
+  for (const key of SCORE_KEYS) tweens[key] = new Tween(0, TWEEN_OPTS);
   tweens['total'] = new Tween(0, TWEEN_OPTS);
 
   let flashStates = $state<Record<string, FlashDir>>({});
   let flashTotal  = $state<FlashDir>(null);
   let modalOpen   = $state(false);
 
-  let prevRows:  { suit: string; maxPips: number; tallestStack: number; numStacks: number; score: number }[] | null = null;
+  let prevScores: Record<string, number> | null = null;
   let prevTotal: number | null = null;
 
   $effect(() => {
-    const currentRows  = rows;
-    const currentTotal = total;
-    const isFirst = prevRows === null;
+    const cur   = scores;
+    const curTotal = total;
+    const isFirst = prevScores === null;
 
-    currentRows.forEach((row, i) => {
-      for (const col of COLS) {
-        const key = `${row.suit}-${col}`;
-        if (isFirst) {
-          tweens[key].set(row[col], { duration: 0 });
-        } else if (row[col] !== prevRows![i][col]) {
-          flashStates[key] = row[col] > prevRows![i][col] ? 'up' : 'down';
-          setTimeout(() => { flashStates[key] = null; }, 900);
-          tweens[key].set(row[col]);
-        }
+    for (const key of SCORE_KEYS) {
+      const val = cur[key];
+      if (isFirst) {
+        tweens[key].set(val, { duration: 0 });
+      } else if (val !== prevScores![key]) {
+        flashStates[key] = val > prevScores![key] ? 'up' : 'down';
+        setTimeout(() => { flashStates[key] = null; }, 900);
+        tweens[key].set(val);
       }
-    });
-
-    if (isFirst) {
-      tweens['total'].set(currentTotal, { duration: 0 });
-    } else if (currentTotal !== prevTotal) {
-      flashTotal = currentTotal > prevTotal! ? 'up' : 'down';
-      setTimeout(() => { flashTotal = null; }, 900);
-      tweens['total'].set(currentTotal);
     }
 
-    prevRows  = currentRows.map(r => ({ ...r }));
-    prevTotal = currentTotal;
+    if (isFirst) {
+      tweens['total'].set(curTotal, { duration: 0 });
+    } else if (curTotal !== prevTotal) {
+      flashTotal = curTotal > prevTotal! ? 'up' : 'down';
+      setTimeout(() => { flashTotal = null; }, 900);
+      tweens['total'].set(curTotal);
+    }
+
+    prevScores = { ...cur };
+    prevTotal  = curTotal;
   });
-
-  // ── Score hover helpers ───────────────────────────────────────────────────
-  function suitCells(suit: string) {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player && top.color === suit;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function pipCells(suit: string, maxPips: number) {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player && top.color === suit && top.value === maxPips;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function tallestCells(suit: string, tallestStack: number) {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player && top.color === suit && c.dice.length === tallestStack;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function allOwnedCells() {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function highlight(cells: Array<{ row: number; col: number }>) {
-    if (cells.length) gameStore.setHoverHighlight({ type: 'cells', cells });
-  }
-
-  function clearHighlight() { gameStore.setHoverHighlight(null); }
 
   function onBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) modalOpen = false;
@@ -171,63 +78,33 @@
     <thead>
       <tr>
         <th></th>
-        <th class="tip" use:tooltip={"The highest die value on top of any stack you own in this suit"}>Pips</th>
-        <th class="op">×</th>
-        <th class="tip" use:tooltip={"The number of dice in your tallest stack of this suit"}>Height</th>
-        <th class="op">×</th>
-        <th class="tip" use:tooltip={"How many stacks you own (top die) in this suit"}>Stacks</th>
-        <th class="op">=</th>
-        <th>Score</th>
+        <th>Pts</th>
       </tr>
     </thead>
     <tbody>
-      {#each rows as row}
-        <tr class:zero={row.score === 0}>
-          <td class="suit" style="color: {SUIT_COLOR[row.suit]}"
-              class:hoverable={row.score > 0}
-              onmouseenter={() => highlight(suitCells(row.suit))}
-              onmouseleave={clearHighlight}
-          >{SUIT_SYMBOL[row.suit]}</td>
-          <td class:flash-up={flashStates[`${row.suit}-maxPips`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-maxPips`] === 'down'}
-              class:hoverable={row.maxPips > 0}
-              onmouseenter={() => highlight(pipCells(row.suit, row.maxPips))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-maxPips`].current) || '—'}</td>
-          <td class="op">×</td>
-          <td class:flash-up={flashStates[`${row.suit}-tallestStack`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-tallestStack`] === 'down'}
-              class:hoverable={row.tallestStack > 0}
-              onmouseenter={() => highlight(tallestCells(row.suit, row.tallestStack))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-tallestStack`].current) || '—'}</td>
-          <td class="op">×</td>
-          <td class:flash-up={flashStates[`${row.suit}-numStacks`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-numStacks`] === 'down'}
-              class:hoverable={row.numStacks > 0}
-              onmouseenter={() => highlight(suitCells(row.suit))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-numStacks`].current) || '—'}</td>
-          <td class="op">=</td>
+      {#each suits as suit}
+        <tr class:zero={scores[suit] === 0}>
+          <td class="suit" style="color: {SUIT_COLOR[suit]}">{SUIT_SYMBOL[suit]}</td>
           <td class="score"
-              class:flash-up={flashStates[`${row.suit}-score`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-score`] === 'down'}
-              class:hoverable={row.score > 0}
-              onmouseenter={() => highlight(suitCells(row.suit))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-score`].current) || '—'}</td>
+              class:flash-up={flashStates[suit] === 'up'}
+              class:flash-down={flashStates[suit] === 'down'}
+          >{Math.round(tweens[suit].current) || '—'}</td>
         </tr>
       {/each}
+      <tr class:zero={scores.wild === 0}>
+        <td class="suit wild">★</td>
+        <td class="score"
+            class:flash-up={flashStates['wild'] === 'up'}
+            class:flash-down={flashStates['wild'] === 'down'}
+        >{Math.round(tweens['wild'].current) || '—'}</td>
+      </tr>
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="7" class="total-label">Total</td>
+        <td class="total-label">Total</td>
         <td class="total-score"
             class:flash-up={flashTotal === 'up'}
             class:flash-down={flashTotal === 'down'}
-            class:hoverable={total > 0}
-            onmouseenter={() => highlight(allOwnedCells())}
-            onmouseleave={clearHighlight}
         >{Math.round(tweens['total'].current)}</td>
       </tr>
     </tfoot>
@@ -257,43 +134,29 @@
       <div class="modal-body">
         <table>
           <thead>
-            <tr>
-              <th></th>
-              <th>Pips</th>
-              <th class="op">×</th>
-              <th>Height</th>
-              <th class="op">×</th>
-              <th>Stacks</th>
-              <th class="op">=</th>
-              <th>Score</th>
-            </tr>
+            <tr><th></th><th>Points</th></tr>
           </thead>
           <tbody>
-            {#each rows as row}
-              <tr class:zero={row.score === 0}>
-                <td class="suit" style="color: {SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
-                <td class:flash-up={flashStates[`${row.suit}-maxPips`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-maxPips`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-maxPips`].current) || '—'}</td>
-                <td class="op">×</td>
-                <td class:flash-up={flashStates[`${row.suit}-tallestStack`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-tallestStack`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-tallestStack`].current) || '—'}</td>
-                <td class="op">×</td>
-                <td class:flash-up={flashStates[`${row.suit}-numStacks`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-numStacks`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-numStacks`].current) || '—'}</td>
-                <td class="op">=</td>
+            {#each suits as suit}
+              <tr class:zero={scores[suit] === 0}>
+                <td class="suit" style="color: {SUIT_COLOR[suit]}">{SUIT_SYMBOL[suit]}</td>
                 <td class="score"
-                    class:flash-up={flashStates[`${row.suit}-score`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-score`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-score`].current) || '—'}</td>
+                    class:flash-up={flashStates[suit] === 'up'}
+                    class:flash-down={flashStates[suit] === 'down'}
+                >{Math.round(tweens[suit].current) || '—'}</td>
               </tr>
             {/each}
+            <tr class:zero={scores.wild === 0}>
+              <td class="suit wild">★</td>
+              <td class="score"
+                  class:flash-up={flashStates['wild'] === 'up'}
+                  class:flash-down={flashStates['wild'] === 'down'}
+              >{Math.round(tweens['wild'].current) || '—'}</td>
+            </tr>
           </tbody>
           <tfoot>
             <tr>
-              <td colspan="7" class="total-label">Total</td>
+              <td class="total-label">Total</td>
               <td class="total-score"
                   class:flash-up={flashTotal === 'up'}
                   class:flash-down={flashTotal === 'down'}
@@ -314,7 +177,7 @@
     border-radius: 10px;
     padding: 8px 10px;
     backdrop-filter: blur(6px);
-    min-width: 150px;
+    min-width: 90px;
   }
 
   .title {
@@ -343,48 +206,19 @@
     letter-spacing: 0.05em;
   }
 
-  th.tip {
-    cursor: default;
-    text-decoration: underline dotted rgba(255,255,255,0.2);
-    text-underline-offset: 2px;
-  }
-
   th:first-child { text-align: left; }
-
-  :global(.fl-tooltip) {
-    background: rgba(15, 20, 40, 0.96);
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 10px;
-    font-weight: 400;
-    color: #ccc;
-    white-space: normal;
-    max-width: 180px;
-    line-height: 1.4;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  }
 
   td {
     text-align: right;
     padding: 3px 4px;
     color: #aaa;
     border-radius: 3px;
-    transition: color 0.1s;
   }
 
   td:first-child { text-align: left; }
-  td.hoverable { cursor: crosshair; }
-
-  .op {
-    color: #444;
-    font-size: 9px;
-    padding: 0 1px;
-    text-align: center;
-    user-select: none;
-  }
 
   .suit { font-size: 13px; width: 16px; }
+  .wild { color: #aaa; }
 
   .score { font-weight: 600; color: #ccc; }
 
@@ -487,27 +321,11 @@
     overflow-x: auto;
   }
 
-  .modal-body table {
-    font-size: 13px;
-    width: 100%;
-  }
-
-  .modal-body th {
-    font-size: 11px;
-    padding: 0 6px 6px;
-  }
-
-  .modal-body td {
-    padding: 5px 6px;
-  }
-
-  .modal-body .total-score {
-    font-size: 16px;
-  }
-
-  .modal-body .suit {
-    font-size: 15px;
-  }
+  .modal-body table { font-size: 13px; width: 100%; }
+  .modal-body th { font-size: 11px; padding: 0 6px 6px; }
+  .modal-body td { padding: 5px 6px; }
+  .modal-body .total-score { font-size: 16px; }
+  .modal-body .suit { font-size: 15px; }
 
   /* ── Responsive ────────────────────────────────────────────────────────── */
   @media (max-width: 600px) {

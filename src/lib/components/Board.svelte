@@ -36,14 +36,11 @@
   }
 
   let boardGeo = $state<THREE.ExtrudeGeometry | null>(null);
-  let trimGeo  = $state<THREE.ExtrudeGeometry | null>(null);
 
   $effect(() => {
     const bg = makeRoundedSlab(7.5, 7.5, 0.18, 0.5);
-    const tg = makeRoundedSlab(7.2, 7.2, 0.06, 0.5);
     boardGeo = bg;
-    trimGeo  = tg;
-    return () => { bg.dispose(); tg.dispose(); };
+    return () => bg.dispose();
   });
 
   let woodTex = $state<THREE.CanvasTexture | null>(null);
@@ -96,64 +93,63 @@
   </T.Mesh>
 {/if}
 
-<!-- Board legs / base trim -->
-{#if trimGeo}
-  <T.Mesh geometry={trimGeo} position={[0, -0.27, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-    <T.MeshStandardMaterial color="#3d2608" roughness={1} />
-  </T.Mesh>
-{/if}
+<!-- Board underside trim — plain box, no bevel -->
+<T.Mesh position={[0, -0.24, 0]}>
+  <T.BoxGeometry args={[7.2, 0.06, 7.2]} />
+  <T.MeshStandardMaterial color="#3d2608" roughness={1} />
+</T.Mesh>
 
 <!-- Player-side border strips (shortened to 6.74 so corners don't overlap) -->
-<!-- P1 white: near + right -->
+<!-- P1 black: near + right -->
 <T.Mesh position={[0, -0.03, 3.56]}>
   <T.BoxGeometry args={[6.74, 0.04, 0.38]} />
-  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
 </T.Mesh>
 <T.Mesh position={[3.56, -0.03, 0]}>
   <T.BoxGeometry args={[0.38, 0.04, 6.74]} />
-  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
 </T.Mesh>
-<!-- P2 black: far + left -->
+<!-- P2 white: far + left -->
 <T.Mesh position={[0, -0.03, -3.56]}>
   <T.BoxGeometry args={[6.74, 0.04, 0.38]} />
-  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
 </T.Mesh>
 <T.Mesh position={[-3.56, -0.03, 0]}>
   <T.BoxGeometry args={[0.38, 0.04, 6.74]} />
-  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
 </T.Mesh>
 
-<!-- Same-colour corners: near-right (both white) and far-left (both black) -->
+<!-- Same-colour corners: near-right (both black) and far-left (both white) -->
 <T.Mesh position={[3.56, -0.03, 3.56]}>
   <T.BoxGeometry args={[0.38, 0.04, 0.38]} />
-  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
 </T.Mesh>
 <T.Mesh position={[-3.56, -0.03, -3.56]}>
   <T.BoxGeometry args={[0.38, 0.04, 0.38]} />
-  <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+  <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
 </T.Mesh>
 
 <!-- Mixed corners with 45° diagonal cut -->
-<!-- near-left (cx=-3.56, cz=+3.56): white near, black left -->
+<!-- near-left (cx=-3.56, cz=+3.56): black near, white left -->
 {#if nlWhiteGeo}
   <T.Mesh position={[-3.56, -0.01, 3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={nlWhiteGeo}>
-    <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+    <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
   </T.Mesh>
 {/if}
 {#if nlBlackGeo}
   <T.Mesh position={[-3.56, -0.01, 3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={nlBlackGeo}>
-    <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+    <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
   </T.Mesh>
 {/if}
-<!-- far-right (cx=+3.56, cz=-3.56): black far, white right -->
+<!-- far-right (cx=+3.56, cz=-3.56): white far, black right -->
 {#if frBlackGeo}
   <T.Mesh position={[3.56, -0.01, -3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={frBlackGeo}>
-    <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
+    <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
   </T.Mesh>
 {/if}
 {#if frWhiteGeo}
   <T.Mesh position={[3.56, -0.01, -3.56]} rotation={[Math.PI / 2, 0, 0]} geometry={frWhiteGeo}>
-    <T.MeshStandardMaterial color="#e8e8e8" roughness={0.6} />
+    <T.MeshStandardMaterial color="#1a1a1a" roughness={0.6} />
   </T.Mesh>
 {/if}
 

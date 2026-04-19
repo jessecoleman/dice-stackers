@@ -35,6 +35,14 @@
     return `${Math.floor(m / 60)}h ago`;
   }
 
+  const WILD_COLOR = '#aaaaaa';
+  function breakdownColor(suit: string): string {
+    return suit === 'wild' ? WILD_COLOR : (SUIT_COLORS[suit] ?? '#ccc');
+  }
+  function breakdownSymbol(suit: string): string {
+    return suit === 'wild' ? '★' : (SUIT_SYMBOLS[suit] ?? suit);
+  }
+
   let listEl       = $state<HTMLUListElement | null>(null);
   let modalListEl  = $state<HTMLUListElement | null>(null);
   let modalOpen    = $state(false);
@@ -73,30 +81,56 @@
         }}
         onmouseleave={() => gameStore.setHoverHighlight(null)}
       >
-        <span class="timestamp">{timeAgo(entry.timestamp)}</span>
-        <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
-        <span class="action">{actionLabel(entry)}</span>
-        <span class="detail">
-          {#if entry.action === 'placed'}
-            <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
-            <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
-            {#if entry.prevDieColor != null}
-              <span class="on">on</span>
-              <span style:color={suitColor(entry.prevDieColor)}>{entry.prevDieValue}</span>
-              <span class="die-cube" style:background={SUIT_COLORS[entry.prevDieColor]}></span>
+        <div class="entry-main">
+          <span class="timestamp">{timeAgo(entry.timestamp)}</span>
+          <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
+          <span class="action">{actionLabel(entry)}</span>
+          <span class="detail">
+            {#if entry.action === 'placed'}
+              <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
+              <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
+              {#if entry.prevDieColor != null}
+                <span class="on">on</span>
+                <span style:color={suitColor(entry.prevDieColor)}>{entry.prevDieValue}</span>
+                <span class="die-cube" style:background={SUIT_COLORS[entry.prevDieColor]}></span>
+              {/if}
+            {:else if entry.action === 'played'}
+              <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+              {#if entry.prevCardSuit != null}
+                <span class="on">on</span>
+                <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
+              {/if}
+            {:else if entry.action === 'cancelled'}
+              <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+            {:else}
+              {entry.detail}
             {/if}
-          {:else if entry.action === 'played'}
-            <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
-            {#if entry.prevCardSuit != null}
-              <span class="on">on</span>
-              <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
+          </span>
+        </div>
+        {#if entry.diePts != null || entry.stackPts?.length || entry.wildPts}
+          <div class="pts-breakdown">
+            {#if entry.diePts != null}
+              <span class="pts-group">
+                <span class="pts-label">die</span>
+                <span class="pts-chip" style:color={breakdownColor(entry.diePtsSuit ?? '')}>{entry.diePts > 0 ? `+${entry.diePts}` : '0'}{breakdownSymbol(entry.diePtsSuit ?? '')}</span>
+              </span>
             {/if}
-          {:else if entry.action === 'cancelled'}
-            <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
-          {:else}
-            {entry.detail}
-          {/if}
-        </span>
+            {#if entry.stackPts?.length}
+              <span class="pts-group">
+                <span class="pts-label">stack</span>
+                {#each entry.stackPts as { suit, pts }}
+                  <span class="pts-chip" style:color={breakdownColor(suit)}>+{pts}{breakdownSymbol(suit)}</span>
+                {/each}
+              </span>
+            {/if}
+            {#if entry.wildPts}
+              <span class="pts-group">
+                <span class="pts-label">wild</span>
+                <span class="pts-chip" style:color={breakdownColor('wild')}>+{entry.wildPts}★</span>
+              </span>
+            {/if}
+          </div>
+        {/if}
       </li>
     {/each}
     {#if gameStore.eventLog.length === 0}
@@ -128,30 +162,56 @@
             class:p1={entry.player === 1}
             class:p2={entry.player === 2}
           >
-            <span class="timestamp">{timeAgo(entry.timestamp)}</span>
-            <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
-            <span class="action">{actionLabel(entry)}</span>
-            <span class="detail">
-              {#if entry.action === 'placed'}
-                <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
-                <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
-                {#if entry.prevDieColor != null}
-                  <span class="on">on</span>
-                  <span style:color={suitColor(entry.prevDieColor)}>{entry.prevDieValue}</span>
-                  <span class="die-cube" style:background={SUIT_COLORS[entry.prevDieColor]}></span>
+            <div class="entry-main">
+              <span class="timestamp">{timeAgo(entry.timestamp)}</span>
+              <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
+              <span class="action">{actionLabel(entry)}</span>
+              <span class="detail">
+                {#if entry.action === 'placed'}
+                  <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
+                  <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
+                  {#if entry.prevDieColor != null}
+                    <span class="on">on</span>
+                    <span style:color={suitColor(entry.prevDieColor)}>{entry.prevDieValue}</span>
+                    <span class="die-cube" style:background={SUIT_COLORS[entry.prevDieColor]}></span>
+                  {/if}
+                {:else if entry.action === 'played'}
+                  <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+                  {#if entry.prevCardSuit != null}
+                    <span class="on">on</span>
+                    <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
+                  {/if}
+                {:else if entry.action === 'cancelled'}
+                  <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+                {:else}
+                  {entry.detail}
                 {/if}
-              {:else if entry.action === 'played'}
-                <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
-                {#if entry.prevCardSuit != null}
-                  <span class="on">on</span>
-                  <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
+              </span>
+            </div>
+            {#if entry.diePts != null || entry.stackPts?.length || entry.wildPts}
+              <div class="pts-breakdown">
+                {#if entry.diePts != null}
+                  <span class="pts-group">
+                    <span class="pts-label">die</span>
+                    <span class="pts-chip" style:color={breakdownColor(entry.diePtsSuit ?? '')}>{entry.diePts > 0 ? `+${entry.diePts}` : '0'}{breakdownSymbol(entry.diePtsSuit ?? '')}</span>
+                  </span>
                 {/if}
-              {:else if entry.action === 'cancelled'}
-                <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
-              {:else}
-                {entry.detail}
-              {/if}
-            </span>
+                {#if entry.stackPts?.length}
+                  <span class="pts-group">
+                    <span class="pts-label">stack</span>
+                    {#each entry.stackPts as { suit, pts }}
+                      <span class="pts-chip" style:color={breakdownColor(suit)}>+{pts}{breakdownSymbol(suit)}</span>
+                    {/each}
+                  </span>
+                {/if}
+                {#if entry.wildPts}
+                  <span class="pts-group">
+                    <span class="pts-label">wild</span>
+                    <span class="pts-chip" style:color={breakdownColor('wild')}>+{entry.wildPts}★</span>
+                  </span>
+                {/if}
+              </div>
+            {/if}
           </li>
         {/each}
         {#if gameStore.eventLog.length === 0}
@@ -198,8 +258,8 @@
 
   .log-entry {
     display: flex;
-    align-items: baseline;
-    gap: 5px;
+    flex-direction: column;
+    gap: 0;
     padding: 3px 10px;
     font-size: 11px;
     line-height: 1.4;
@@ -235,15 +295,53 @@
 
   .detail {
     color: #ccc;
-    word-break: break-word;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
+    min-width: 0;
   }
 
   .on {
     color: rgba(255,255,255,0.3);
     font-size: 9px;
+  }
+
+  .entry-main {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .pts-breakdown {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-left: 18px;
+    margin-top: 1px;
+  }
+
+  .pts-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .pts-label {
+    font-size: 9px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 1px;
+  }
+
+  .pts-chip {
+    font-size: 10px;
+    font-weight: 700;
+    opacity: 0.9;
   }
 
   .die-cube {

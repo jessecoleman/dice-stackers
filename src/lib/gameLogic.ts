@@ -2,6 +2,8 @@
 
 export const suits = ['red', 'blue', 'green', 'yellow'] as const;
 export type Suit = typeof suits[number];
+export type ScoreKey = Suit | 'wild';
+export type Scores = Record<ScoreKey, number>;
 
 export interface Die {
   id: string;
@@ -46,6 +48,13 @@ export interface EventLogEntry {
   cardSuit?: string;
   prevCardValue?: number;
   prevCardSuit?: string;
+  /** Points from placing the die (|new - prev| in die's suit). */
+  diePts?: number;
+  diePtsSuit?: ScoreKey;
+  /** Points from clearing the opponent's stack (2 per card, by card suit). */
+  stackPts?: Array<{ suit: ScoreKey; pts: number }>;
+  /** Wild bonus from 4-color cell clear. */
+  wildPts?: number;
 }
 
 export interface GameState {
@@ -56,12 +65,17 @@ export interface GameState {
   player1Hand: Card[];
   player2Hand: Card[];
   drawPile: Card[];
+  discardPile: Card[];
   cardSlots: Record<string, Card[]>;
-  pendingDiePlacement: { card: Card; edge: Edge; index: 0 | 1 | 2 } | null;
+  pendingDiePlacement: { card: Card; edge: Edge; index: 0 | 1 | 2; completesStack: boolean } | null;
+  actionsRemaining: 1 | 2;
+  usedSlotThisTurn: { edge: Edge; index: 0 | 1 | 2 } | null;
   player2Joined: boolean;
   player1Name: string;
   player2Name: string;
   eventLog: EventLogEntry[];
+  scores1: Scores;
+  scores2: Scores;
   rematchRequestedBy?: 1 | 2;
   rematchRoomId?: string;
   createdAt: number;
@@ -80,11 +94,19 @@ export function slotKey(edge: Edge, index: 0 | 1 | 2): string {
   return `${edge}-${index}`;
 }
 
+const SUIT_VALUES: Record<string, number[]> = {
+  red:    [1, 2, 3, 4],
+  yellow: [2, 3, 4, 5],
+  green:  [3, 4, 5, 6],
+  blue:   [1, 2, 5, 6],
+};
+
 function buildDeck(): Card[] {
   const cards: Card[] = [];
   for (const suit of suits) {
-    for (let v = 1; v <= 6; v++) {
-      cards.push({ id: `${suit}-${v}`, suit, value: v });
+    for (const v of SUIT_VALUES[suit]) {
+      cards.push({ id: `${suit}-${v}-a`, suit, value: v });
+      cards.push({ id: `${suit}-${v}-b`, suit, value: v });
     }
   }
   return cards;
@@ -97,6 +119,43 @@ function shuffle<T>(arr: T[]): T[] {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+function emptyScores(): Scores {
+  return { red: 0, blue: 0, green: 0, yellow: 0, wild: 0 };
+}
+
+function oppositeEdge(edge: Edge): Edge {
+  if (edge === 'top')    return 'bottom';
+  if (edge === 'bottom') return 'top';
+  if (edge === 'left')   return 'right';
+  return 'left';
+}
+
+// ── Stack pattern helpers ─────────────────────────────────────────────────────
+
+// Returns true if cards could still complete as a set (all same value).
+function canBeSet(cards: Card[]): boolean {
+  return cards.every(c => c.value === cards[0].value);
+}
+
+// Returns true if cards could still complete as a run (3 consecutive values in strictly
+// ascending or strictly descending order; suits are irrelevant).
+function canBeRun(cards: Card[]): boolean {
+  if (cards.length === 1) return true;
+  const vals = cards.map(c => c.value);
+  const dir = Math.sign(vals[1] - vals[0]); // +1 ascending, -1 descending, 0 = duplicate
+  if (dir === 0) return false;
+  for (let i = 1; i < vals.length; i++) {
+    if (Math.sign(vals[i] - vals[i - 1]) !== dir) return false; // direction changed
+    if (Math.abs(vals[i] - vals[i - 1]) !== 1) return false;    // gap > 1
+  }
+  return true;
+}
+
+// Returns true if cards could still complete as same-color (all same suit).
+function canBeSameColor(cards: Card[]): boolean {
+  return cards.every(c => c.suit === cards[0].suit);
 }
 
 // ── State creation ────────────────────────────────────────────────────────────
@@ -118,12 +177,17 @@ export function createInitialState(roomId: string): GameState {
     player1Hand: deck.slice(0, 6),
     player2Hand: deck.slice(6, 12),
     drawPile: deck.slice(12),
+    discardPile: [],
     cardSlots: emptySlots,
     pendingDiePlacement: null,
+    actionsRemaining: 2,
+    usedSlotThisTurn: null,
     player2Joined: false,
     player1Name: 'Player 1',
     player2Name: 'Player 2',
     eventLog: [],
+    scores1: emptyScores(),
+    scores2: emptyScores(),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -135,6 +199,7 @@ export function canPlayToEdge(player: 1 | 2, edge: Edge): boolean {
   return PLAYER_EDGES[player].includes(edge);
 }
 
+// A stack is valid as long as adding the card keeps at least one pattern (set / run / same-color) viable.
 export function isValidStackOrder(
   cardSlots: Record<string, Card[]>,
   edge: Edge,
@@ -143,13 +208,12 @@ export function isValidStackOrder(
 ): boolean {
   const stack = cardSlots[slotKey(edge, index)] ?? [];
   if (stack.length === 0) return true;
-  if (stack.some(c => c.suit === card.suit)) return false;
-  const topValue = stack[stack.length - 1].value;
-  return (edge === 'left' || edge === 'right')
-    ? card.value > topValue
-    : card.value < topValue;
+  if (stack.length >= 3) return false; // stack already full
+  const newStack = [...stack, card];
+  return canBeSet(newStack) || canBeRun(newStack) || canBeSameColor(newStack);
 }
 
+// A die may be placed on any aligned cell where that color doesn't already appear in the stack.
 export function isCellValidForDiePlacement(
   grid: CellStack[][],
   pending: { card: Card; edge: Edge; index: 0 | 1 | 2 },
@@ -160,11 +224,7 @@ export function isCellValidForDiePlacement(
   const aligned = (edge === 'top' || edge === 'bottom') ? col === index : row === index;
   if (!aligned) return false;
   const stack = grid[row][col].dice;
-  if (stack.length > 0) {
-    const top = stack[stack.length - 1];
-    if (card.value >= top.value) return false;
-    if (stack.some(d => d.color === card.suit)) return false;
-  }
+  if (stack.some(d => d.color === card.suit)) return false; // each color appears at most once
   return true;
 }
 
@@ -185,12 +245,7 @@ export function isCellNoPlacementWarning(
       const r = isHoriz ? i : slotIndex;
       const c = isHoriz ? slotIndex : i;
       const stack = grid[r][c].dice;
-      if (stack.length === 0) { anyValid = true; break; }
-      const top = stack[stack.length - 1];
-      if (card.value < top.value && !stack.some(d => d.color === card.suit)) {
-        anyValid = true;
-        break;
-      }
+      if (!stack.some(d => d.color === card.suit)) { anyValid = true; break; }
     }
     if (!anyValid) return true;
   }
@@ -217,7 +272,7 @@ function cardPlayHasDieCells(
 
 function hasValidMoves(state: GameState, player: 1 | 2): boolean {
   const hand = player === 1 ? state.player1Hand : state.player2Hand;
-  if (state.drawPile.length > 0 && hand.length < 6) return true;
+  if ((state.drawPile.length > 0 || state.discardPile.length > 0) && hand.length < 6) return true;
   for (const card of hand) {
     for (const edge of PLAYER_EDGES[player]) {
       for (let i = 0; i < 3; i++) {
@@ -229,17 +284,22 @@ function hasValidMoves(state: GameState, player: 1 | 2): boolean {
 }
 
 function advanceTurn(s: GameState): GameState {
+  // Player still has actions left this turn — just decrement.
+  if (s.actionsRemaining > 1) {
+    return { ...s, actionsRemaining: (s.actionsRemaining - 1) as 1 | 2 };
+  }
+
+  // All actions used — switch to next player with a full 2-action turn.
   const next: 1 | 2 = s.currentPlayer === 1 ? 2 : 1;
-  let out = { ...s, currentPlayer: next };
+  let out = { ...s, currentPlayer: next, actionsRemaining: 2 as const, usedSlotThisTurn: null };
   if (out.phase === 'last-turn') {
     out = { ...out, phase: 'game-over' };
   } else if (!hasValidMoves(out, next)) {
     const bonusPlayer = s.currentPlayer;
     if (!hasValidMoves(out, bonusPlayer)) {
-      // Both players are stuck — end immediately
       out = { ...out, phase: 'game-over' };
     } else {
-      out = { ...out, phase: 'last-turn', currentPlayer: bonusPlayer };
+      out = { ...out, phase: 'last-turn', currentPlayer: bonusPlayer, actionsRemaining: 2, usedSlotThisTurn: null };
     }
   }
   return out;
@@ -263,6 +323,8 @@ export function applyAction(
       const { card, edge, index } = action;
       if (!canPlayToEdge(player, edge)) return { state, error: 'Cannot play to that edge' };
       if (!isValidStackOrder(s.cardSlots, edge, index, card)) return { state, error: 'Invalid stack order' };
+      const used = s.usedSlotThisTurn;
+      if (used && used.edge === edge && used.index === index) return { state, error: 'Cannot play to the same stack twice in one turn' };
 
       const hand = player === 1 ? s.player1Hand : s.player2Hand;
       const idx = hand.findIndex(c => c.id === card.id);
@@ -271,8 +333,11 @@ export function applyAction(
 
       const prevCard = s.cardSlots[slotKey(edge, index)].at(-1);
       s.cardSlots[slotKey(edge, index)].push(card);
-      s.pendingDiePlacement = { card, edge, index };
+      const completesStack = s.cardSlots[slotKey(edge, index)].length === 3;
+      s.pendingDiePlacement = { card, edge, index, completesStack };
+      s.usedSlotThisTurn = { edge, index };
       s.eventLog.push({ player, action: 'played', detail: '', timestamp: Date.now(), slot: { edge, index }, cardSuit: card.suit, cardValue: card.value, prevCardSuit: prevCard?.suit, prevCardValue: prevCard?.value });
+
       s.updatedAt = Date.now();
       return { state: s };
     }
@@ -283,18 +348,58 @@ export function applyAction(
       if (!isCellValidForDiePlacement(s.grid, s.pendingDiePlacement, row, col)) {
         return { state, error: 'Invalid cell for die placement' };
       }
-      const { card, edge: dieEdge } = s.pendingDiePlacement;
+      const { card, edge: dieEdge, completesStack } = s.pendingDiePlacement;
       const prevDie = s.grid[row][col].dice.at(-1);
-      s.grid[row][col].dice.push({
+      const newDie: Die = {
         id: `die-${card.suit}-${card.value}-${Date.now()}`,
         color: card.suit,
         value: card.value,
         player,
         edge: dieEdge,
-      });
-      const placedDieId = s.grid[row][col].dice[s.grid[row][col].dice.length - 1].id;
+      };
+      s.grid[row][col].dice.push(newDie);
+
+      // Score: |new_value - prev_value| points in the color of the die being placed.
+      // On an empty cell (no prev die) treat prev_value as 0, so score = card.value.
+      const points = Math.abs(card.value - (prevDie?.value ?? 0));
+      if (player === 1) s.scores1[card.suit] += points;
+      else s.scores2[card.suit] += points;
+
+      // 4-die bonus: if all 4 dice on this cell are different colors, clear and award 1 wild point.
+      let wildPts = 0;
+      const cellDice = s.grid[row][col].dice;
+      if (cellDice.length === 4) {
+        const colorSet = new Set(cellDice.map(d => d.color));
+        if (colorSet.size === 4) {
+          s.grid[row][col].dice = [];
+          if (player === 1) s.scores1.wild += 1;
+          else s.scores2.wild += 1;
+          wildPts = 1;
+        }
+      }
+
+      // Stack completion: clear own slot and mirror slot, score 2 pts per card color in mirror.
+      const stackPtsMap = new Map<ScoreKey, number>();
+      if (completesStack) {
+        const ownKey    = slotKey(dieEdge, s.pendingDiePlacement.index);
+        const mirrorKey = slotKey(oppositeEdge(dieEdge), s.pendingDiePlacement.index);
+        const mirrorCards = s.cardSlots[mirrorKey];
+        for (const c of mirrorCards) {
+          if (player === 1) s.scores1[c.suit] += 2;
+          else s.scores2[c.suit] += 2;
+          stackPtsMap.set(c.suit, (stackPtsMap.get(c.suit) ?? 0) + 2);
+        }
+        s.discardPile.push(...s.cardSlots[ownKey], ...mirrorCards);
+        s.cardSlots[ownKey]    = [];
+        s.cardSlots[mirrorKey] = [];
+      }
+
+      const stackPts = stackPtsMap.size > 0
+        ? [...stackPtsMap.entries()].map(([suit, pts]) => ({ suit, pts }))
+        : undefined;
+      const placedDieId = newDie.id;
       s.pendingDiePlacement = null;
-      s.eventLog.push({ player, action: 'placed', detail: '', timestamp: Date.now(), cell: { row, col }, dieId: placedDieId, dieColor: card.suit, dieValue: card.value, prevDieValue: prevDie?.value, prevDieColor: prevDie?.color });
+      s.eventLog.push({ player, action: 'placed', detail: '', timestamp: Date.now(), cell: { row, col }, dieId: placedDieId, dieColor: card.suit, dieValue: card.value, prevDieValue: prevDie?.value, prevDieColor: prevDie?.color, diePts: points > 0 ? points : undefined, diePtsSuit: points > 0 ? card.suit : undefined, stackPts, wildPts: wildPts > 0 ? wildPts : undefined });
       s.updatedAt = Date.now();
       return { state: advanceTurn(s) };
     }
@@ -302,8 +407,16 @@ export function applyAction(
     case 'DRAW_TO_SIX': {
       if (s.pendingDiePlacement) return { state, error: 'Die placement still pending' };
       const hand = player === 1 ? s.player1Hand : s.player2Hand;
-      const count = Math.min(Math.max(0, 6 - hand.length), s.drawPile.length);
-      for (let i = 0; i < count; i++) hand.push(s.drawPile.pop()!);
+      let count = 0;
+      while (hand.length < 6) {
+        if (s.drawPile.length === 0) {
+          if (s.discardPile.length === 0) break;
+          s.drawPile = shuffle(s.discardPile);
+          s.discardPile = [];
+        }
+        hand.push(s.drawPile.pop()!);
+        count++;
+      }
       s.eventLog.push({ player, action: 'drew', detail: `${count} card${count !== 1 ? 's' : ''}`, timestamp: Date.now() });
       s.updatedAt = Date.now();
       return { state: advanceTurn(s) };
@@ -318,6 +431,7 @@ export function applyAction(
       const hand = player === 1 ? s.player1Hand : s.player2Hand;
       hand.push(card);
       s.pendingDiePlacement = null;
+      s.usedSlotThisTurn = null; // refund: cancelled action frees the slot restriction
       s.eventLog.push({ player, action: 'cancelled', detail: '', timestamp: Date.now(), cardSuit: card.suit, cardValue: card.value });
       s.updatedAt = Date.now();
       return { state: s };
