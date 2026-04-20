@@ -81,6 +81,7 @@ function createGameStore() {
     get cardSlots() { return serverState?.cardSlots ?? {}; },
     get currentPlayer() { return serverState?.currentPlayer ?? 1; },
     get pendingDiePlacement() { return serverState?.pendingDiePlacement ?? null; },
+    get pendingSteal() { return serverState?.pendingSteal ?? false; },
     get actionsRemaining(): 1 | 2 { return serverState?.actionsRemaining ?? 2; },
     get usedSlotThisTurn() { return serverState?.usedSlotThisTurn ?? null; },
     get gamePhase() { return serverState?.phase ?? 'playing'; },
@@ -160,6 +161,15 @@ function createGameStore() {
 
     async cancelTurn() {
       await sendAction({ type: 'CANCEL_PLAY' });
+    },
+
+    async stealCard(cardId: string) {
+      await sendAction({ type: 'STEAL_CARD', cardId });
+    },
+
+    async discardAndDraw(cardIds: string[]) {
+      selectedCard = null;
+      await sendAction({ type: 'DISCARD_AND_DRAW', cardIds });
     },
 
     /** Save the seated player's display name to the server. */

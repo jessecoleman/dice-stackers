@@ -35,7 +35,7 @@
   const LABEL_Y   = DIE_HALF + 0.001; // just above the top face
 
   const color     = $derived(colors[die.color] ?? '#888');
-  const textColor = $derived(die.player === 1 ? '#111111' : '#ffffff');
+  const textColor = '#ffffff';
 
   let labelTex = $state<ReturnType<typeof createDieLabelTexture> | null>(null);
   $effect(() => {

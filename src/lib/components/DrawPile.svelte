@@ -2,6 +2,8 @@
   import { gameStore } from '$lib/gameStore.svelte';
   import Card from './Card.svelte';
   import emptyStackUrl from '$lib/assets/empty-stack.svg?url';
+  import { flip } from 'svelte/animate';
+  import { cubicOut } from 'svelte/easing';
 
   const drawRemaining  = $derived(gameStore.drawPile.length);
   const discardCount   = $derived(gameStore.discardPile.length);
@@ -13,14 +15,40 @@
     (drawRemaining > 0 || discardCount > 0) && !handFull
   );
 
-  const STACK_LAYERS = 4;
+  const STACK_LAYERS = 6;
   const topCards = $derived(gameStore.drawPile.slice(0, STACK_LAYERS));
+
+  let showDiscardModal = $state(false);
+
+  type SortMode = 'none' | 'suit-rank' | 'rank-suit';
+  let discardSortMode = $state<SortMode>('none');
+  const SUIT_ORDER: Record<string, number> = { red: 0, blue: 1, green: 2, yellow: 3 };
+
+  const sortedDiscard = $derived.by(() => {
+    const pile = [...gameStore.discardPile].reverse();
+    if (discardSortMode === 'suit-rank') {
+      return pile.sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.value - b.value);
+    }
+    if (discardSortMode === 'rank-suit') {
+      return pile.sort((a, b) => a.value - b.value || SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit]);
+    }
+    return pile;
+  });
+
+  function onBackdropClick(e: MouseEvent) {
+    if (e.target === e.currentTarget) showDiscardModal = false;
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') showDiscardModal = false;
+  }
 </script>
+
+<svelte:window onkeydown={onKeyDown} />
 
 <div class="piles-row">
   <!-- Draw pile -->
   <div class="pile-area">
-    <div class="pile-label">Draw</div>
     <button
       class="pile"
       class:empty={!drawRemaining && !discardCount}
@@ -41,12 +69,17 @@
         <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
       {/if}
     </button>
+    <div class="pile-label">Draw</div>
   </div>
 
   <!-- Discard pile -->
   <div class="pile-area">
-    <div class="pile-label">Discard</div>
-    <div class="pile non-interactive" class:empty={!discardCount}>
+    <button
+      class="pile"
+      class:empty={!discardCount}
+      onclick={() => { if (discardCount) showDiscardModal = true; }}
+      title={discardCount ? 'View discard pile' : 'Discard pile is empty'}
+    >
       {#if topDiscard}
         <div class="pile-card" style="bottom: 0; left: 0; z-index: 1;">
           <Card card={topDiscard} faceDown={false} />
@@ -57,9 +90,36 @@
       {:else}
         <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
       {/if}
-    </div>
+    </button>
+    <div class="pile-label">Discard</div>
   </div>
 </div>
+
+{#if showDiscardModal}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="backdrop" onclick={onBackdropClick}>
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Discard Pile ({discardCount})</span>
+        <div class="modal-header-right">
+          <div class="sort-row">
+            <button class="sort-btn" class:active={discardSortMode === 'suit-rank'} onclick={() => discardSortMode = discardSortMode === 'suit-rank' ? 'none' : 'suit-rank'}>Suit</button>
+            <button class="sort-btn" class:active={discardSortMode === 'rank-suit'} onclick={() => discardSortMode = discardSortMode === 'rank-suit' ? 'none' : 'rank-suit'}>Rank</button>
+          </div>
+          <button class="close-btn" onclick={() => showDiscardModal = false}>✕</button>
+        </div>
+      </div>
+      <div class="card-grid">
+        {#each sortedDiscard as card (card.id)}
+          <div class="card-no-hover" animate:flip={{ duration: 280, easing: cubicOut }}>
+            <Card {card} faceDown={false} />
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .piles-row {
@@ -74,6 +134,7 @@
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    overflow: visible;
   }
 
   .pile-label {
@@ -92,10 +153,7 @@
     border: none;
     padding: 0;
     cursor: pointer;
-  }
-
-  .pile.non-interactive {
-    cursor: default;
+    overflow: visible;
   }
 
   .pile.empty {
@@ -112,11 +170,28 @@
     position: absolute;
     width: 64px;
     height: 92px;
-    transition: transform 0.15s;
+    transform-origin: bottom center;
+    transition: transform 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);
   }
 
-  .pile:not(.empty):not(.disabled):not(.non-interactive):hover .pile-card:last-of-type {
-    transform: translateY(-4px);
+  /* Hover splay: spread cards upward vertically */
+  .pile:not(.empty):not(.disabled):hover .pile-card:nth-child(1) {
+    transform: translateY(0px);
+  }
+  .pile:not(.empty):not(.disabled):hover .pile-card:nth-child(2) {
+    transform: translateY(-22px);
+  }
+  .pile:not(.empty):not(.disabled):hover .pile-card:nth-child(3) {
+    transform: translateY(-44px);
+  }
+  .pile:not(.empty):not(.disabled):hover .pile-card:nth-child(4) {
+    transform: translateY(-66px);
+  }
+  .pile:not(.empty):not(.disabled):hover .pile-card:nth-child(5) {
+    transform: translateY(-88px);
+  }
+  .pile:not(.empty):not(.disabled):hover .pile-card:nth-child(6) {
+    transform: translateY(-110px);
   }
 
   .count-badge {
@@ -143,5 +218,109 @@
     width: 100%;
     height: 100%;
     opacity: 0.3;
+  }
+
+  /* Discard modal */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+
+  .modal {
+    background: rgba(12, 18, 32, 0.97);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 20px;
+    width: min(480px, 90vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .modal-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sort-row {
+    display: flex;
+    gap: 4px;
+  }
+
+  .sort-btn {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.4);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .sort-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.7);
+  }
+
+  .sort-btn.active {
+    background: rgba(255,215,0,0.12);
+    border-color: rgba(255,215,0,0.35);
+    color: #ffd700;
+  }
+
+  .card-no-hover {
+    pointer-events: none;
+  }
+
+  .modal-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.3);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    line-height: 1;
+  }
+
+  .close-btn:hover {
+    color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.07);
+  }
+
+  .card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    overflow-y: auto;
+    padding: 4px 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
   }
 </style>

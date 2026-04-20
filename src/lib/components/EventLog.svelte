@@ -19,6 +19,7 @@
       case 'placed':    return 'placed';
       case 'drew':      return 'drew';
       case 'cancelled': return 'cancelled';
+      case 'stole':     return 'stole';
     }
   }
 
@@ -182,6 +183,8 @@
                     <span style:color={suitColor(entry.prevCardSuit)}>{entry.prevCardValue} {SUIT_SYMBOLS[entry.prevCardSuit]}</span>
                   {/if}
                 {:else if entry.action === 'cancelled'}
+                  <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+                {:else if entry.action === 'stole'}
                   <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
                 {:else}
                   {entry.detail}

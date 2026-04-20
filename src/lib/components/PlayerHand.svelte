@@ -2,14 +2,30 @@
   import Card from './Card.svelte';
   import { gameStore, type Card as CardType } from '$lib/gameStore.svelte';
   import { flip } from 'svelte/animate';
-  import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { send, receive } from '$lib/transitions';
 
 
   let { player, showBacks = false }: { player: 1 | 2; showBacks?: boolean } = $props();
 
   const rawHand = $derived(player === 1 ? gameStore.player1Hand : gameStore.player2Hand);
   const isActive = $derived(gameStore.currentPlayer === player);
+
+  let discardSelection = $state(new Set<string>());
+  // Clear selection whenever it's no longer our turn
+  $effect(() => { if (!isActive) discardSelection = new Set(); });
+  // Remove any card IDs that are no longer in hand (e.g. after playing a card)
+  $effect(() => {
+    const handIds = new Set(hand.map(c => c.id));
+    const pruned = [...discardSelection].filter(id => handIds.has(id));
+    if (pruned.length !== discardSelection.size) discardSelection = new Set(pruned);
+  });
+
+  const isStealTarget = $derived(
+    gameStore.pendingSteal &&
+    player !== gameStore.seat &&
+    player !== gameStore.currentPlayer
+  );
 
   type SortMode = 'none' | 'suit-rank' | 'rank-suit';
   let sortMode = $state<SortMode>('none');
@@ -43,31 +59,59 @@
   }
 
   function handleSelect(card: CardType) {
-    if (!isActive) return;
-    gameStore.selectCard(player, card);
+    if (isStealTarget) { gameStore.stealCard(card.id); return; }
+    if (!isActive || gameStore.pendingDiePlacement || gameStore.pendingSteal) return;
+    if (player !== gameStore.seat) return;
+
+    const next = new Set(discardSelection);
+    if (next.has(card.id)) {
+      next.delete(card.id);
+    } else {
+      next.add(card.id);
+    }
+    discardSelection = next;
+
+    // Sync slot-play selection: only valid when exactly one card is queued
+    if (discardSelection.size === 1) {
+      const [id] = discardSelection;
+      const singleCard = hand.find(c => c.id === id)!;
+      gameStore.deselectCard();
+      gameStore.selectCard(player, singleCard);
+    } else {
+      gameStore.deselectCard();
+    }
+  }
+
+  async function handleDiscardAndDraw() {
+    const ids = [...discardSelection];
+    discardSelection = new Set();
+    await gameStore.discardAndDraw(ids);
   }
 </script>
 
-<div class="hand-area" class:active={isActive} class:player2={player === 2}>
+<div class="hand-area" class:active={isActive} class:player2={player === 2} class:steal-target={isStealTarget}>
   <div class="label" class:p1={player === 1} class:p2={player === 2}>
-    <span class="pip-die" class:pip-white={player === 2}>
-      <span class="pip-dot"></span>
-    </span>
+    <span class="player-circle" class:white={player === 2}></span>
     {gameStore.playerName(player)}
     {#if isActive}
       {#each { length: gameStore.actionsRemaining } as _}
         <span class="turn-dot"></span>
       {/each}
     {/if}
-    {#if isActive && player === gameStore.seat && !gameStore.pendingDiePlacement && (gameStore.drawPile.length > 0 || gameStore.discardPile.length > 0)}
-      <button class="draw-btn" onclick={() => gameStore.drawToSix()}>Draw to 6</button>
+    {#if isActive && player === gameStore.seat && !gameStore.pendingDiePlacement}
+      {#if discardSelection.size > 0}
+        <button class="draw-btn discard-draw-btn" onclick={handleDiscardAndDraw}>
+          Discard {discardSelection.size} &amp; Draw to 6
+        </button>
+      {:else if gameStore.drawPile.length > 0 || gameStore.discardPile.length > 0}
+        <button class="draw-btn" onclick={() => gameStore.drawToSix()}>Draw to 6</button>
+      {/if}
     {/if}
     {#if isActive && player === gameStore.seat && gameStore.pendingDiePlacement}
       <button class="cancel-btn" onclick={() => gameStore.cancelTurn()}>Cancel</button>
     {/if}
-    {#if !showBacks}
-      <button class="sort-btn" class:active={sortMode === 'suit-rank'} onclick={() => sortMode = sortMode === 'suit-rank' ? 'none' : 'suit-rank'}>Suit</button>
-      <button class="sort-btn" class:active={sortMode === 'rank-suit'} onclick={() => sortMode = sortMode === 'rank-suit' ? 'none' : 'rank-suit'}>Rank</button>
+    {#if isActive && player === gameStore.seat && gameStore.pendingSteal}
+      <span class="steal-prompt">Steal a card ↑</span>
     {/if}
   </div>
 
@@ -77,14 +121,20 @@
       {@const dy  = cardTranslateY(i, hand.length)}
       <div
         class="card-slot"
-        style="transform: rotate({rot}deg) translateY({dy}px); z-index: {i}"
+        class:stealable={isStealTarget}
+        class:card-selected={discardSelection.has(card.id)}
+        style="transform: rotate({rot}deg) translateY({dy}px); z-index: {discardSelection.has(card.id) ? 60 : i}"
         animate:flip={{ duration: 280, easing: cubicOut }}
-        in:fly={{ y: 40, duration: 240, easing: cubicOut }}
+        out:send={{ key: card.id }}
+        in:receive={{ key: card.id }}
+        onclick={isStealTarget ? () => handleSelect(card) : undefined}
+        role={isStealTarget ? 'button' : undefined}
       >
         <Card
           {card}
-          faceDown={showBacks}
-          selected={!showBacks && gameStore.selectedCard?.card.id === card.id}
+          faceDown={showBacks || isStealTarget}
+          selected={false}
+          discardQueued={!showBacks && discardSelection.has(card.id)}
           onplay={handleSelect}
         />
       </div>
@@ -94,6 +144,13 @@
       <div class="empty-hand">No cards</div>
     {/if}
   </div>
+
+  {#if !showBacks}
+    <div class="sort-row">
+      <button class="sort-btn" class:active={sortMode === 'suit-rank'} onclick={() => sortMode = sortMode === 'suit-rank' ? 'none' : 'suit-rank'}>Suit</button>
+      <button class="sort-btn" class:active={sortMode === 'rank-suit'} onclick={() => sortMode = sortMode === 'rank-suit' ? 'none' : 'rank-suit'}>Rank</button>
+    </div>
+  {/if}
 
 </div>
 
@@ -112,6 +169,20 @@
     border-radius: 12px;
   }
 
+  .hand-area.steal-target {
+    background: rgba(229, 62, 62, 0.08);
+    border-radius: 12px;
+    outline: 1px solid rgba(229, 62, 62, 0.3);
+  }
+
+  .card-slot.stealable {
+    cursor: crosshair;
+  }
+
+  .card-slot.stealable:hover {
+    filter: brightness(1.25);
+  }
+
   .label {
     font-size: 12px;
     font-weight: 600;
@@ -127,32 +198,19 @@
     flex-direction: row-reverse;
   }
 
-  .pip-die {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    background: #e8e8e8;
-    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25);
+  .player-circle {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.2);
     flex-shrink: 0;
   }
 
-  .pip-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: #111;
-  }
-
-  .pip-die.pip-white {
-    background: #1a1a1a;
-    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.15);
-  }
-
-  .pip-die.pip-white .pip-dot {
+  .player-circle.white {
     background: #fff;
+    border-color: rgba(255,255,255,0.5);
   }
 
   .label.p1 { color: #c8c8c8; }
@@ -179,6 +237,7 @@
     gap: 0;
     padding: 12px 24px 4px;
     position: relative;
+    perspective: 800px;
   }
 
   .card-slot {
@@ -240,6 +299,17 @@
     color: #fff;
   }
 
+  .discard-draw-btn {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #f87171;
+  }
+
+  .discard-draw-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+  }
+
   .cancel-btn {
     margin-top: 4px;
     padding: 5px 16px;
@@ -281,5 +351,19 @@
     background: rgba(255,215,0,0.12);
     border-color: rgba(255,215,0,0.35);
     color: #ffd700;
+  }
+
+  .sort-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .steal-prompt {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f87171;
+    letter-spacing: 0.04em;
+    animation: pulse 1.2s ease-in-out infinite;
   }
 </style>

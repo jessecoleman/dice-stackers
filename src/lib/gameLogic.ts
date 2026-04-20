@@ -34,7 +34,7 @@ export const PLAYER_EDGES: Record<1 | 2, Edge[]> = {
 
 export interface EventLogEntry {
   player: 1 | 2;
-  action: 'played' | 'placed' | 'drew' | 'cancelled';
+  action: 'played' | 'placed' | 'drew' | 'cancelled' | 'stole';
   detail: string;
   timestamp: number;
   slot?: { edge: Edge; index: 0 | 1 | 2 };
@@ -53,8 +53,8 @@ export interface EventLogEntry {
   diePtsSuit?: ScoreKey;
   /** Points from clearing the opponent's stack (2 per card, by card suit). */
   stackPts?: Array<{ suit: ScoreKey; pts: number }>;
-  /** Wild bonus from 4-color cell clear. */
-  wildPts?: number;
+  /** Card stolen via 4-color cell bonus. */
+  stolenCard?: boolean;
 }
 
 export interface GameState {
@@ -68,7 +68,10 @@ export interface GameState {
   discardPile: Card[];
   cardSlots: Record<string, Card[]>;
   pendingDiePlacement: { card: Card; edge: Edge; index: 0 | 1 | 2; completesStack: boolean } | null;
+  pendingSteal: boolean;
   actionsRemaining: 1 | 2;
+  /** How many times the discard pile has been shuffled back into the draw pile. Game ends after 2 reshuffles (3 total deck cycles). */
+  deckCycles: number;
   usedSlotThisTurn: { edge: Edge; index: 0 | 1 | 2 } | null;
   player2Joined: boolean;
   player1Name: string;
@@ -86,7 +89,9 @@ export type Action =
   | { type: 'PLAY_CARD'; card: Card; edge: Edge; index: 0 | 1 | 2 }
   | { type: 'PLACE_DIE'; row: number; col: number }
   | { type: 'DRAW_TO_SIX' }
-  | { type: 'CANCEL_PLAY' };
+  | { type: 'DISCARD_AND_DRAW'; cardIds: string[] }
+  | { type: 'CANCEL_PLAY' }
+  | { type: 'STEAL_CARD'; cardId: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -180,6 +185,8 @@ export function createInitialState(roomId: string): GameState {
     discardPile: [],
     cardSlots: emptySlots,
     pendingDiePlacement: null,
+    pendingSteal: false,
+    deckCycles: 0,
     actionsRemaining: 2,
     usedSlotThisTurn: null,
     player2Joined: false,
@@ -294,7 +301,12 @@ function advanceTurn(s: GameState): GameState {
   let out = { ...s, currentPlayer: next, actionsRemaining: 2 as const, usedSlotThisTurn: null };
   if (out.phase === 'last-turn') {
     out = { ...out, phase: 'game-over' };
-  } else if (!hasValidMoves(out, next)) {
+    return out;
+  }
+
+  // Decks exhausted after 3 cycles — treat the same as no valid moves.
+  const decksEmpty = out.drawPile.length === 0 && out.discardPile.length === 0 && out.deckCycles >= 2;
+  if (decksEmpty || !hasValidMoves(out, next)) {
     const bonusPlayer = s.currentPlayer;
     if (!hasValidMoves(out, bonusPlayer)) {
       out = { ...out, phase: 'game-over' };
@@ -320,6 +332,7 @@ export function applyAction(
   switch (action.type) {
     case 'PLAY_CARD': {
       if (s.pendingDiePlacement) return { state, error: 'Die placement still pending' };
+      if (s.pendingSteal) return { state, error: 'Must resolve steal first' };
       const { card, edge, index } = action;
       if (!canPlayToEdge(player, edge)) return { state, error: 'Cannot play to that edge' };
       if (!isValidStackOrder(s.cardSlots, edge, index, card)) return { state, error: 'Invalid stack order' };
@@ -365,16 +378,14 @@ export function applyAction(
       if (player === 1) s.scores1[card.suit] += points;
       else s.scores2[card.suit] += points;
 
-      // 4-die bonus: if all 4 dice on this cell are different colors, clear and award 1 wild point.
-      let wildPts = 0;
+      // 4-die bonus: if all 4 dice on this cell are different colors, clear and grant a steal.
       const cellDice = s.grid[row][col].dice;
       if (cellDice.length === 4) {
         const colorSet = new Set(cellDice.map(d => d.color));
         if (colorSet.size === 4) {
           s.grid[row][col].dice = [];
-          if (player === 1) s.scores1.wild += 1;
-          else s.scores2.wild += 1;
-          wildPts = 1;
+          const opponentHand = player === 1 ? s.player2Hand : s.player1Hand;
+          if (opponentHand.length > 0) s.pendingSteal = true;
         }
       }
 
@@ -399,25 +410,56 @@ export function applyAction(
         : undefined;
       const placedDieId = newDie.id;
       s.pendingDiePlacement = null;
-      s.eventLog.push({ player, action: 'placed', detail: '', timestamp: Date.now(), cell: { row, col }, dieId: placedDieId, dieColor: card.suit, dieValue: card.value, prevDieValue: prevDie?.value, prevDieColor: prevDie?.color, diePts: points > 0 ? points : undefined, diePtsSuit: points > 0 ? card.suit : undefined, stackPts, wildPts: wildPts > 0 ? wildPts : undefined });
+      s.eventLog.push({ player, action: 'placed', detail: '', timestamp: Date.now(), cell: { row, col }, dieId: placedDieId, dieColor: card.suit, dieValue: card.value, prevDieValue: prevDie?.value, prevDieColor: prevDie?.color, diePts: points > 0 ? points : undefined, diePtsSuit: points > 0 ? card.suit : undefined, stackPts, stolenCard: false });
       s.updatedAt = Date.now();
-      return { state: advanceTurn(s) };
+      // If a steal is pending, hold the turn until STEAL_CARD resolves it.
+      return { state: s.pendingSteal ? s : advanceTurn(s) };
     }
 
     case 'DRAW_TO_SIX': {
       if (s.pendingDiePlacement) return { state, error: 'Die placement still pending' };
+      if (s.pendingSteal) return { state, error: 'Must resolve steal first' };
       const hand = player === 1 ? s.player1Hand : s.player2Hand;
       let count = 0;
       while (hand.length < 6) {
         if (s.drawPile.length === 0) {
-          if (s.discardPile.length === 0) break;
+          if (s.discardPile.length === 0 || s.deckCycles >= 2) break;
           s.drawPile = shuffle(s.discardPile);
           s.discardPile = [];
+          s.deckCycles++;
         }
         hand.push(s.drawPile.pop()!);
         count++;
       }
       s.eventLog.push({ player, action: 'drew', detail: `${count} card${count !== 1 ? 's' : ''}`, timestamp: Date.now() });
+      s.updatedAt = Date.now();
+      return { state: advanceTurn(s) };
+    }
+
+    case 'DISCARD_AND_DRAW': {
+      if (s.pendingDiePlacement) return { state, error: 'Die placement still pending' };
+      if (s.pendingSteal) return { state, error: 'Must resolve steal first' };
+      const hand = player === 1 ? s.player1Hand : s.player2Hand;
+      const toDiscard = new Set(action.cardIds);
+      const discarded = hand.filter(c => toDiscard.has(c.id));
+      if (discarded.length === 0) return { state, error: 'No cards to discard' };
+      const kept = hand.filter(c => !toDiscard.has(c.id));
+      if (player === 1) s.player1Hand = kept; else s.player2Hand = kept;
+      s.discardPile.push(...discarded);
+      // Draw back up to 6
+      const freshHand = player === 1 ? s.player1Hand : s.player2Hand;
+      let count = 0;
+      while (freshHand.length < 6) {
+        if (s.drawPile.length === 0) {
+          if (s.discardPile.length === 0 || s.deckCycles >= 2) break;
+          s.drawPile = shuffle(s.discardPile);
+          s.discardPile = [];
+          s.deckCycles++;
+        }
+        freshHand.push(s.drawPile.pop()!);
+        count++;
+      }
+      s.eventLog.push({ player, action: 'drew', detail: `discarded ${discarded.length}, drew ${count}`, timestamp: Date.now() });
       s.updatedAt = Date.now();
       return { state: advanceTurn(s) };
     }
@@ -435,6 +477,30 @@ export function applyAction(
       s.eventLog.push({ player, action: 'cancelled', detail: '', timestamp: Date.now(), cardSuit: card.suit, cardValue: card.value });
       s.updatedAt = Date.now();
       return { state: s };
+    }
+
+    case 'STEAL_CARD': {
+      if (!s.pendingSteal) return { state, error: 'No steal pending' };
+      const opponentHand = player === 1 ? s.player2Hand : s.player1Hand;
+      const cardIdx = opponentHand.findIndex(c => c.id === action.cardId);
+      if (cardIdx === -1) return { state, error: 'Card not found in opponent hand' };
+      const [stolen] = opponentHand.splice(cardIdx, 1);
+      const myHand = player === 1 ? s.player1Hand : s.player2Hand;
+      myHand.push(stolen);
+      s.pendingSteal = false;
+      // Mark the last log entry (the PLACE_DIE that triggered the steal) as having stolen a card.
+      const lastEntry = s.eventLog[s.eventLog.length - 1];
+      if (lastEntry) lastEntry.stolenCard = true;
+      s.eventLog.push({
+        player,
+        action: 'stole',
+        detail: `${stolen.suit} ${stolen.value}`,
+        cardSuit: stolen.suit,
+        cardValue: stolen.value,
+        timestamp: Date.now(),
+      });
+      s.updatedAt = Date.now();
+      return { state: advanceTurn(s) };
     }
 
     default:

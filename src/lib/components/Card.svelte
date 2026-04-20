@@ -6,12 +6,14 @@
     flipped = false,
     faceDown = false,
     selected = false,
+    discardQueued = false,
     onplay,
   }: {
     card: Card;
     flipped?: boolean;
     faceDown?: boolean;
     selected?: boolean;
+    discardQueued?: boolean;
     onplay?: (card: Card) => void;
   } = $props();
 
@@ -40,6 +42,7 @@
   class:flipped
   class:face-down={faceDown}
   class:selected
+  class:discard-queued={discardQueued}
   onclick={() => onplay?.(card)}
   style="--suit-color: {color}"
 >
@@ -81,6 +84,12 @@
     transform: translateY(-16px) scale(1.08);
     z-index: 30;
     filter: drop-shadow(0 0 6px #ffd700) drop-shadow(0 0 12px #ffd700);
+  }
+
+  .card.discard-queued {
+    transform: translateY(-14px) scale(1.06);
+    z-index: 20;
+    filter: drop-shadow(0 0 6px rgba(255,255,255,0.9)) drop-shadow(0 0 14px rgba(255,255,255,0.5));
   }
 
   .card.flipped {
@@ -142,8 +151,10 @@
   .back-symbol {
     position: relative;
     z-index: 1;
-    font-size: 26px;
-    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+    font-size: var(--card-sym-size, 18px);
+    color: rgba(255,255,255,0.85);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.45);
+    line-height: 1;
   }
 
 </style>

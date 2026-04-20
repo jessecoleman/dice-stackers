@@ -9,10 +9,10 @@ const SUIT_SYMBOL: Record<string, string> = {
 };
 
 const SUIT_BG: Record<string, string> = {
-  red:    '#e53e3e',
-  green:  '#38a169',
-  yellow: '#d69e2e',
-  blue:   '#3b82f6',
+  red:    '#9b1c1c',
+  green:  '#1a5c38',
+  yellow: '#92640a',
+  blue:   '#1e429f',
 };
 
 /**
