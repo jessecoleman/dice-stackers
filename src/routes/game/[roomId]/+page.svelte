@@ -509,9 +509,10 @@
   }
 
   .board-row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 20px;
+    justify-content: center;
     flex-shrink: 0;
   }
 
@@ -612,6 +613,10 @@
   }
 
   .left-panel {
+    position: absolute;
+    right: calc(100% + 16px);
+    top: 50%;
+    translate: 0 -50%;
     display: flex;
     flex-direction: column;
     align-items: center;

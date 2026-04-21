@@ -124,9 +124,9 @@
 <style>
   .piles-row {
     display: flex;
-    flex-direction: row;
-    gap: 10px;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
   }
 
   .pile-area {
