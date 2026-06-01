@@ -293,8 +293,7 @@
       </span>
       <span class="follow-sep">·</span>
       <span class="follow-instr">
-        Follow <strong style:color={SUIT_COLOR[lead.suit]}>{lead.suit}</strong>
-        if you can, into a <strong>{followAxis}</strong>
+        Respond with a <strong>non-{lead.suit}</strong> face, into a <strong>{followAxis}</strong>
       </span>
     </div>
   {/if}
