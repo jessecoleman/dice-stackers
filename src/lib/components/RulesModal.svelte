@@ -20,47 +20,32 @@
 
     <section>
       <h3>Overview</h3>
-      <p>Two players compete on a 3×3 grid. You score points by owning the top die on stacks — the bigger the stack, the higher the die value, and the more stacks you control, the better.</p>
+      <p>A trick-taking game for two on a 3×3 grid. Win tricks to place your color dice on the board, then score the most points. Play continues until every card stack is full.</p>
     </section>
 
     <section>
       <h3>Your Edges</h3>
-      <p>Each player owns two edges of the board:</p>
+      <p>Each player owns two edges of the board, holding six card stacks in all:</p>
       <ul>
         <li><strong>Player 1</strong> — bottom &amp; right edges</li>
         <li><strong>Player 2</strong> — top &amp; left edges</li>
       </ul>
-      <p>Each edge has <strong>3 card slots</strong>, one aligned to each row or column of the grid.</p>
+      <p>Each edge has <strong>3 stacks</strong>, one per row or column, and each stack holds up to 3 cards.</p>
     </section>
 
     <section>
-      <h3>Taking a Turn</h3>
-      <p>Each turn, choose one action:</p>
-      <ul>
-        <li><strong>Play a card + place a die</strong> — play a card from your hand to one of your edge slots, then place a die on a valid cell in that slot's row or column.</li>
-        <li><strong>Draw up to 6 cards</strong> — replenish your hand from the draw pile up to 6 cards.</li>
-      </ul>
+      <h3>Leading a Trick</h3>
+      <p>The leader plays one card from hand into any of their own stacks — on a <strong>row</strong> or a <strong>column</strong> — that still has room. There is no ordering restriction, and <em>no die is placed</em> when leading.</p>
     </section>
 
     <section>
-      <h3>Card Slot Rules</h3>
-      <p>Each slot holds a stack of cards. When adding a card:</p>
-      <ul>
-        <li>No two cards in a slot may share the same suit.</li>
-        <li>On <strong>left/right</strong> edges — each card played must have a <em>higher</em> value than the one below it.</li>
-        <li>On <strong>top/bottom</strong> edges — each card played must have a <em>lower</em> value than the one below it.</li>
-      </ul>
-      <p class="example">Example: a bottom-edge slot holding a red 5 can only accept non-red cards valued 1–4.</p>
+      <h3>Following</h3>
+      <p>The opponent must respond on the <strong>opposite axis</strong>: if the leader played a row, the follower plays a column, and vice-versa. You must <strong>follow the led suit</strong> if you hold it. The follower places a die matching their card's color and value where the two stacks' row and column cross, stacked on whatever is already there.</p>
     </section>
 
     <section>
-      <h3>Die Placement Rules</h3>
-      <p>After playing a card you must place a die on a cell in that slot's <strong>row or column</strong>. The die inherits the card's suit and value. To stack onto an existing die:</p>
-      <ul>
-        <li>The new die's value must be <em>lower</em> than the top die.</li>
-        <li>No two dice in a stack may share the same suit.</li>
-      </ul>
-      <p class="example">Example: a stack with a blue 4 on top can accept any non-blue die valued 1–3.</p>
+      <h3>Winning the Trick</h3>
+      <p>The highest card of the <strong>led suit</strong> wins the trick. A follower who can't follow suit can play any card but cannot win. The trick winner leads the next trick. Once your hand is used up you draw a fresh one.</p>
     </section>
 
     <section>
@@ -77,15 +62,15 @@
 
     <section>
       <h3>Game End</h3>
-      <p>When a player has no valid moves (no card can be played that leads to a legal die placement), the <em>other</em> player takes one final turn. The player with the higher total score wins.</p>
+      <p>The game ends when every card stack is full (three cards each). The player with the higher total score wins.</p>
     </section>
 
     <section>
       <h3>Strategic Tips</h3>
       <ul class="tips">
-        <li><strong>Mind the direction of your stacks.</strong> Descending edge slots reward opening with your highest-value cards, leaving room to add lower ones beneath them. Ascending slots work in reverse — seed them early with modest values so you have space to build upward as the game develops.</li>
-        <li><strong>Preserve your flexibility.</strong> Committing too many cards to a single row or column narrows your future options considerably. A hand full of cards is of little use if every slot that accepts them is already spoken for.</li>
-        <li><strong>Know your opponent's board as well as your own.</strong> Study which of their stacks are exposed and which are still open. A stack you cannot reach is a threat; one you can cover cheaply may be an opportunity. The player who accounts for their opponent's moves — not just their own — will find the endgame far less surprising.</li>
+        <li><strong>Hold your high cards of each suit.</strong> Only the led suit can win a trick, so a top card is your key to seizing the lead — and the lead is what lets you dictate which axis the next die lands on.</li>
+        <li><strong>Watch where the die falls.</strong> The follower's die always lands at the intersection of the two stacks. Plan which row and column you commit to so your dice build tall stacks in your own color rather than burying them under the opponent's.</li>
+        <li><strong>Losing a trick isn't always bad.</strong> Only the follower places a die, so deliberately following low can plant a die exactly where you want it while letting the opponent keep a lead they may not want.</li>
       </ul>
     </section>
   </div>

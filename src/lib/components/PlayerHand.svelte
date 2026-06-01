@@ -14,17 +14,22 @@
   type SortMode = 'none' | 'suit-rank' | 'rank-suit';
   let sortMode = $state<SortMode>('none');
 
-  const SUIT_ORDER: Record<string, number> = { red: 0, blue: 1, green: 2, yellow: 3 };
+  const SUIT_ORDER: Record<string, number> = { red: 0, green: 1, blue: 2 };
+
+  // Sort keys use the higher-value face so dual cards order sensibly.
+  function hiFace(c: typeof rawHand[number]) {
+    return c.faces[0].value >= c.faces[1].value ? c.faces[0] : c.faces[1];
+  }
 
   const hand = $derived.by(() => {
     if (sortMode === 'suit-rank') {
       return [...rawHand].sort((a, b) =>
-        SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.value - b.value
+        SUIT_ORDER[hiFace(a).suit] - SUIT_ORDER[hiFace(b).suit] || hiFace(b).value - hiFace(a).value
       );
     }
     if (sortMode === 'rank-suit') {
       return [...rawHand].sort((a, b) =>
-        a.value - b.value || SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit]
+        hiFace(b).value - hiFace(a).value || SUIT_ORDER[hiFace(a).suit] - SUIT_ORDER[hiFace(b).suit]
       );
     }
     return rawHand;
@@ -55,11 +60,11 @@
     </span>
     {gameStore.playerName(player)}
     {#if isActive}<span class="turn-dot"></span>{/if}
-    {#if isActive && player === gameStore.seat && !gameStore.pendingDiePlacement && gameStore.drawPile.length > 0}
-      <button class="draw-btn" onclick={() => gameStore.drawToSix()}>Draw to 6</button>
-    {/if}
-    {#if isActive && player === gameStore.seat && gameStore.pendingDiePlacement}
-      <button class="cancel-btn" onclick={() => gameStore.cancelTurn()}>Cancel</button>
+    {#if isActive && player === gameStore.seat}
+      <span class="phase-tag">{gameStore.isLeading ? 'Lead' : 'Follow'}</span>
+      {#if gameStore.selectedCard}
+        <button class="flip-btn" onclick={() => gameStore.flipSelected()} title="Flip which face is active">⤺ Flip</button>
+      {/if}
     {/if}
     {#if !showBacks}
       <button class="sort-btn" class:active={sortMode === 'suit-rank'} onclick={() => sortMode = sortMode === 'suit-rank' ? 'none' : 'suit-rank'}>Suit</button>
@@ -71,6 +76,7 @@
     {#each hand as card, i (card.id)}
       {@const rot = cardRotation(i, hand.length)}
       {@const dy  = cardTranslateY(i, hand.length)}
+      {@const isSel = !showBacks && gameStore.selectedCard?.card.id === card.id}
       <div
         class="card-slot"
         style="transform: rotate({rot}deg) translateY({dy}px); z-index: {i}"
@@ -79,8 +85,9 @@
       >
         <Card
           {card}
+          orientation={isSel ? gameStore.selectedOrientation : 0}
           faceDown={showBacks}
-          selected={!showBacks && gameStore.selectedCard?.card.id === card.id}
+          selected={isSel}
           onplay={handleSelect}
         />
       </div>
@@ -196,8 +203,8 @@
     .hand-area {
       --card-w: 48px;
       --card-h: 70px;
-      --card-val-size: 20px;
-      --card-sym-size: 13px;
+      --card-val-size: 13px;
+      --card-sym-size: 10px;
       padding: 6px 8px;
     }
 
@@ -217,42 +224,33 @@
     padding: 20px;
   }
 
-  .draw-btn {
-    margin-top: 4px;
-    padding: 5px 16px;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.15);
+  .phase-tag {
+    padding: 2px 8px;
+    background: rgba(255,215,0,0.12);
+    border: 1px solid rgba(255,215,0,0.35);
     border-radius: 20px;
-    color: #aaa;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    color: #ffd700;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  .flip-btn {
+    padding: 2px 9px;
+    background: rgba(100,180,255,0.14);
+    border: 1px solid rgba(100,180,255,0.4);
+    border-radius: 20px;
+    color: #8cc4ff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
   }
 
-  .draw-btn:hover {
-    background: rgba(255,255,255,0.13);
+  .flip-btn:hover {
+    background: rgba(100,180,255,0.26);
     color: #fff;
-  }
-
-  .cancel-btn {
-    margin-top: 4px;
-    padding: 5px 16px;
-    background: rgba(229, 62, 62, 0.12);
-    border: 1px solid rgba(229, 62, 62, 0.35);
-    border-radius: 20px;
-    color: #e57373;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .cancel-btn:hover {
-    background: rgba(229, 62, 62, 0.25);
-    color: #ff8a80;
   }
 
   .sort-btn {

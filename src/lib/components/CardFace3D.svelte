@@ -4,10 +4,11 @@
   import { T } from '@threlte/core';
   import * as THREE from 'three';
   import { createCardTexture } from '$lib/utils/cardTexture';
-  import type { Card } from '$lib/gameStore.svelte';
+  import type { Face } from '$lib/gameStore.svelte';
 
   let {
-    card,
+    up,
+    down,
     width,
     depth,
     surfaceY,
@@ -18,7 +19,8 @@
     oz = 0,
     rotationZ = 0,
   }: {
-    card: Card;
+    up: Face;
+    down: Face;
     width: number;
     depth: number;
     surfaceY: number;
@@ -31,7 +33,7 @@
   let texture = $state<THREE.CanvasTexture | null>(null);
 
   $effect(() => {
-    const t = createCardTexture(card);
+    const t = createCardTexture(up, down);
     texture = t;
     return () => { t.dispose(); };
   });

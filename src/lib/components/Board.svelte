@@ -3,7 +3,6 @@
   import * as THREE from 'three';
   import GridCell from './GridCell.svelte';
   import CardStackSlot from './CardStackSlot.svelte';
-  import EdgeDirectionIndicator from './EdgeDirectionIndicator.svelte';
   import { createWoodTexture } from '$lib/utils/cardTexture';
   import type { Edge } from '$lib/gameStore.svelte';
 
@@ -169,10 +168,9 @@
   {/each}
 {/each}
 
-<!-- Card slots — 3 per edge, 12 total -->
+<!-- Card slots — 3 per edge, 12 total (six per player) -->
 {#each EDGES as edge}
   {#each [0, 1, 2] as idx}
     <CardStackSlot {edge} index={idx as 0 | 1 | 2} />
   {/each}
-  <EdgeDirectionIndicator {edge} />
 {/each}

@@ -51,33 +51,23 @@
     red: '♥', green: '♣', yellow: '★', blue: '♦',
   };
 
-  const diceStacks = $derived(gameStore.grid.flat().map(c => c.dice));
-
-  const rows = $derived(suits.map(suit => {
-    const stacks = diceStacks.filter(stack => {
-      const top = stack[stack.length - 1];
-      return top && top.player === player && top.color === suit;
-    });
-    const numStacks    = stacks.length;
-    const tallestStack = stacks.reduce((m, s) => Math.max(s.length, m), 0);
-    const maxPips      = stacks.reduce((m, s) => Math.max(s[s.length - 1].value, m), 0);
-    return { suit, numStacks, tallestStack, maxPips, score: numStacks * tallestStack * maxPips };
-  }));
-
-  const total = $derived(rows.reduce((sum, r) => sum + r.score, 0));
+  // Per-colour point pools (die-difference during play + poker at end).
+  // The game score is the MINIMUM across the three colours, so diversifying matters.
+  const pool = $derived(gameStore.scoreOf(player));
+  const rows = $derived(suits.map(suit => ({ suit, points: pool[suit] })));
+  const total = $derived(gameStore.finalScoreOf(player));
+  const minColor = $derived(
+    rows.reduce((m, r) => (r.points < m.points ? r : m), rows[0])?.suit
+  );
 
   // ── Flash + tween tracking ────────────────────────────────────────────────────
   type FlashDir = 'up' | 'down' | null;
-  type RowCol = 'maxPips' | 'tallestStack' | 'numStacks' | 'score';
 
-  const COLS: RowCol[] = ['maxPips', 'tallestStack', 'numStacks', 'score'];
   const TWEEN_OPTS = { duration: 600, easing: cubicOut };
 
   const tweens: Record<string, Tween<number>> = {};
   for (const suit of suits) {
-    for (const col of COLS) {
-      tweens[`${suit}-${col}`] = new Tween(0, TWEEN_OPTS);
-    }
+    tweens[`${suit}-points`] = new Tween(0, TWEEN_OPTS);
   }
   tweens['total'] = new Tween(0, TWEEN_OPTS);
 
@@ -85,7 +75,7 @@
   let flashTotal  = $state<FlashDir>(null);
   let modalOpen   = $state(false);
 
-  let prevRows:  { suit: string; maxPips: number; tallestStack: number; numStacks: number; score: number }[] | null = null;
+  let prevRows:  { suit: string; points: number }[] | null = null;
   let prevTotal: number | null = null;
 
   $effect(() => {
@@ -94,15 +84,13 @@
     const isFirst = prevRows === null;
 
     currentRows.forEach((row, i) => {
-      for (const col of COLS) {
-        const key = `${row.suit}-${col}`;
-        if (isFirst) {
-          tweens[key].set(row[col], { duration: 0 });
-        } else if (row[col] !== prevRows![i][col]) {
-          flashStates[key] = row[col] > prevRows![i][col] ? 'up' : 'down';
-          setTimeout(() => { flashStates[key] = null; }, 900);
-          tweens[key].set(row[col]);
-        }
+      const key = `${row.suit}-points`;
+      if (isFirst) {
+        tweens[key].set(row.points, { duration: 0 });
+      } else if (row.points !== prevRows![i].points) {
+        flashStates[key] = row.points > prevRows![i].points ? 'up' : 'down';
+        setTimeout(() => { flashStates[key] = null; }, 900);
+        tweens[key].set(row.points);
       }
     });
 
@@ -119,32 +107,12 @@
   });
 
   // ── Score hover helpers ───────────────────────────────────────────────────
+  // Highlight grid cells whose top die is this colour (where this colour's
+  // running points come from).
   function suitCells(suit: string) {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player && top.color === suit;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function pipCells(suit: string, maxPips: number) {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player && top.color === suit && top.value === maxPips;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function tallestCells(suit: string, tallestStack: number) {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player && top.color === suit && c.dice.length === tallestStack;
-    }).map(c => ({ row: c.row, col: c.col }));
-  }
-
-  function allOwnedCells() {
-    return gameStore.grid.flat().filter(c => {
-      const top = c.dice[c.dice.length - 1];
-      return top && top.player === player;
-    }).map(c => ({ row: c.row, col: c.col }));
+    return gameStore.grid.flat().filter(c =>
+      c.dice.some(d => d.color === suit)
+    ).map(c => ({ row: c.row, col: c.col }));
   }
 
   function highlight(cells: Array<{ row: number; col: number }>) {
@@ -171,63 +139,33 @@
     <thead>
       <tr>
         <th></th>
-        <th class="tip" use:tooltip={"The highest die value on top of any stack you own in this suit"}>Pips</th>
-        <th class="op">×</th>
-        <th class="tip" use:tooltip={"The number of dice in your tallest stack of this suit"}>Height</th>
-        <th class="op">×</th>
-        <th class="tip" use:tooltip={"How many stacks you own (top die) in this suit"}>Stacks</th>
-        <th class="op">=</th>
-        <th>Score</th>
+        <th class="tip" use:tooltip={"Points in this colour, from die differences during play and won poker hands at the end"}>Points</th>
       </tr>
     </thead>
     <tbody>
       {#each rows as row}
-        <tr class:zero={row.score === 0}>
+        <tr class:min-row={row.suit === minColor}>
           <td class="suit" style="color: {SUIT_COLOR[row.suit]}"
-              class:hoverable={row.score > 0}
+              class:hoverable={row.points > 0}
               onmouseenter={() => highlight(suitCells(row.suit))}
               onmouseleave={clearHighlight}
           >{SUIT_SYMBOL[row.suit]}</td>
-          <td class:flash-up={flashStates[`${row.suit}-maxPips`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-maxPips`] === 'down'}
-              class:hoverable={row.maxPips > 0}
-              onmouseenter={() => highlight(pipCells(row.suit, row.maxPips))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-maxPips`].current) || '—'}</td>
-          <td class="op">×</td>
-          <td class:flash-up={flashStates[`${row.suit}-tallestStack`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-tallestStack`] === 'down'}
-              class:hoverable={row.tallestStack > 0}
-              onmouseenter={() => highlight(tallestCells(row.suit, row.tallestStack))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-tallestStack`].current) || '—'}</td>
-          <td class="op">×</td>
-          <td class:flash-up={flashStates[`${row.suit}-numStacks`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-numStacks`] === 'down'}
-              class:hoverable={row.numStacks > 0}
-              onmouseenter={() => highlight(suitCells(row.suit))}
-              onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-numStacks`].current) || '—'}</td>
-          <td class="op">=</td>
           <td class="score"
-              class:flash-up={flashStates[`${row.suit}-score`] === 'up'}
-              class:flash-down={flashStates[`${row.suit}-score`] === 'down'}
-              class:hoverable={row.score > 0}
+              class:flash-up={flashStates[`${row.suit}-points`] === 'up'}
+              class:flash-down={flashStates[`${row.suit}-points`] === 'down'}
+              class:hoverable={row.points > 0}
               onmouseenter={() => highlight(suitCells(row.suit))}
               onmouseleave={clearHighlight}
-          >{Math.round(tweens[`${row.suit}-score`].current) || '—'}</td>
+          >{Math.round(tweens[`${row.suit}-points`].current)}</td>
         </tr>
       {/each}
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="7" class="total-label">Total</td>
+        <td class="total-label tip" use:tooltip={"Your score is the lowest of your three colour totals — diversify!"}>min</td>
         <td class="total-score"
             class:flash-up={flashTotal === 'up'}
             class:flash-down={flashTotal === 'down'}
-            class:hoverable={total > 0}
-            onmouseenter={() => highlight(allOwnedCells())}
-            onmouseleave={clearHighlight}
         >{Math.round(tweens['total'].current)}</td>
       </tr>
     </tfoot>
@@ -259,41 +197,23 @@
           <thead>
             <tr>
               <th></th>
-              <th>Pips</th>
-              <th class="op">×</th>
-              <th>Height</th>
-              <th class="op">×</th>
-              <th>Stacks</th>
-              <th class="op">=</th>
-              <th>Score</th>
+              <th>Points</th>
             </tr>
           </thead>
           <tbody>
             {#each rows as row}
-              <tr class:zero={row.score === 0}>
+              <tr class:min-row={row.suit === minColor}>
                 <td class="suit" style="color: {SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
-                <td class:flash-up={flashStates[`${row.suit}-maxPips`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-maxPips`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-maxPips`].current) || '—'}</td>
-                <td class="op">×</td>
-                <td class:flash-up={flashStates[`${row.suit}-tallestStack`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-tallestStack`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-tallestStack`].current) || '—'}</td>
-                <td class="op">×</td>
-                <td class:flash-up={flashStates[`${row.suit}-numStacks`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-numStacks`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-numStacks`].current) || '—'}</td>
-                <td class="op">=</td>
                 <td class="score"
-                    class:flash-up={flashStates[`${row.suit}-score`] === 'up'}
-                    class:flash-down={flashStates[`${row.suit}-score`] === 'down'}
-                >{Math.round(tweens[`${row.suit}-score`].current) || '—'}</td>
+                    class:flash-up={flashStates[`${row.suit}-points`] === 'up'}
+                    class:flash-down={flashStates[`${row.suit}-points`] === 'down'}
+                >{Math.round(tweens[`${row.suit}-points`].current)}</td>
               </tr>
             {/each}
           </tbody>
           <tfoot>
             <tr>
-              <td colspan="7" class="total-label">Total</td>
+              <td class="total-label">min</td>
               <td class="total-score"
                   class:flash-up={flashTotal === 'up'}
                   class:flash-down={flashTotal === 'down'}
@@ -376,19 +296,13 @@
   td:first-child { text-align: left; }
   td.hoverable { cursor: crosshair; }
 
-  .op {
-    color: #444;
-    font-size: 9px;
-    padding: 0 1px;
-    text-align: center;
-    user-select: none;
-  }
-
   .suit { font-size: 13px; width: 16px; }
 
   .score { font-weight: 600; color: #ccc; }
 
-  .zero td { opacity: 0.35; }
+  /* The colour currently setting your min score (the bottleneck). */
+  .min-row .score { color: #ffd700; }
+  .min-row .suit  { opacity: 1; }
 
   tfoot tr { border-top: 1px solid rgba(255,255,255,0.1); }
 

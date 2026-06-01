@@ -4,9 +4,6 @@
   import emptyStackUrl from '$lib/assets/empty-stack.svg?url';
 
   const remaining  = $derived(gameStore.drawPile.length);
-  const myHand     = $derived(gameStore.seat === 2 ? gameStore.player2Hand : gameStore.player1Hand);
-  const handFull   = $derived(myHand.length >= 6);
-  const canDraw    = $derived(remaining > 0 && !handFull);
 
   const STACK_LAYERS = 4;
   const topCards = $derived(gameStore.drawPile.slice(0, STACK_LAYERS));
@@ -15,13 +12,10 @@
 <div class="draw-pile-area">
   <div class="pile-label">Draw Pile</div>
 
-  <button
+  <div
     class="pile"
     class:empty={!remaining}
-    class:disabled={!canDraw}
-    onclick={() => gameStore.drawToSix()}
-    disabled={!canDraw}
-    title={!remaining ? 'Pile is empty' : handFull ? 'Hand is full' : 'Draw up to 6 cards'}
+    title={!remaining ? 'Pile is empty' : 'Hands refill automatically when emptied'}
   >
     <!-- Stacked card backs for depth -->
     {#each topCards as card, i}
@@ -35,7 +29,7 @@
     {:else}
       <img class="empty-placeholder" src={emptyStackUrl} alt="Empty" />
     {/if}
-  </button>
+  </div>
 </div>
 
 <style>

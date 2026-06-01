@@ -33,7 +33,7 @@
   const LABEL_Y   = DIE_HALF + 0.001; // just above the top face
 
   const color     = $derived(colors[die.color] ?? '#888');
-  const textColor = $derived(die.player === 1 ? '#111111' : '#ffffff');
+  const textColor = '#ffffff';
 
   let labelTex = $state<ReturnType<typeof createDieLabelTexture> | null>(null);
   $effect(() => {
@@ -87,7 +87,7 @@
 
   <!-- Numerals on all faces -->
   {#if labelTex}
-    {@const labelRotZ = die.edge === 'top' ? Math.PI : die.edge === 'right' ? Math.PI / 2 : die.edge === 'left' ? 3 * Math.PI / 2 : 0}
+    {@const labelRotZ = 0}
     <!-- Top face -->
     <T.Mesh position={[0, LABEL_Y, 0]} rotation={[-Math.PI / 2, 0, labelRotZ]}>
       <T.PlaneGeometry args={[DIE_SIZE * 0.8, DIE_SIZE * 0.8]} />

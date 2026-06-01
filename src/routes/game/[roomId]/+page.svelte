@@ -72,25 +72,27 @@
     red: '♥', green: '♣', yellow: '★', blue: '♦',
   };
 
+  // ── Follower prompt ──────────────────────────────────────────────────────────
+  // While a trick is in progress, tell the responding player which suit/axis the
+  // leader committed to. Shown to the player whose turn it is (or to spectators).
+  const lead          = $derived(gameStore.trick);
+  const followAxis    = $derived(lead?.axis === 'row' ? 'column' : 'row');
+  const showFollowBanner = $derived(
+    lead !== null &&
+    gameStore.gamePhase === 'playing' &&
+    (seat === null || gameStore.currentPlayer === seat)
+  );
+
+  // Per-colour pools → each player's rows; final score is the min across colours.
   function calcRows(player: 1 | 2) {
-    return suits.map(suit => {
-      const stacks = gameStore.grid.flat()
-        .map(c => c.dice)
-        .filter(stack => {
-          const top = stack[stack.length - 1];
-          return top && top.player === player && top.color === suit;
-        });
-      const numStacks    = stacks.length;
-      const tallestStack = stacks.reduce((m, s) => Math.max(s.length, m), 0);
-      const maxPips      = stacks.reduce((m, s) => Math.max(s[s.length - 1].value, m), 0);
-      return { suit, numStacks, tallestStack, maxPips, score: numStacks * tallestStack * maxPips };
-    });
+    const pool = gameStore.scoreOf(player);
+    return suits.map(suit => ({ suit, points: pool[suit] }));
   }
 
   const rows1  = $derived(calcRows(1));
   const rows2  = $derived(calcRows(2));
-  const score1 = $derived(rows1.reduce((s, r) => s + r.score, 0));
-  const score2 = $derived(rows2.reduce((s, r) => s + r.score, 0));
+  const score1 = $derived(gameStore.finalScoreOf(1));
+  const score2 = $derived(gameStore.finalScoreOf(2));
   const winner = $derived(
     score1 > score2 ? 1 : score2 > score1 ? 2 : null
   );
@@ -138,23 +140,6 @@
       goto(`/game/${newRoomId}${query}`);
     }
   });
-
-  // ── Last-turn toast ────────────────────────────────────────────────────────
-  let showLastTurnToast = $state(false);
-  let lastTurnToastTimer: ReturnType<typeof setTimeout> | null = null;
-
-  $effect(() => {
-    if (gameStore.gamePhase === 'last-turn') {
-      showLastTurnToast = true;
-      if (lastTurnToastTimer) clearTimeout(lastTurnToastTimer);
-      lastTurnToastTimer = setTimeout(() => { showLastTurnToast = false; }, 6000);
-    }
-  });
-
-  onDestroy(() => { if (lastTurnToastTimer) clearTimeout(lastTurnToastTimer); });
-
-  const lastTurnPlayer   = $derived(gameStore.currentPlayer);
-  const stuckPlayer      = $derived<1 | 2>(lastTurnPlayer === 1 ? 2 : 1);
 
   // ── Polling ────────────────────────────────────────────────────────────────
   // Poll every second when it's not our seat's turn.
@@ -299,15 +284,18 @@
     <div class="join-toast">Player 2 has joined!</div>
   {/if}
 
-  <!-- Last-turn toast -->
-  {#if showLastTurnToast}
-    <div class="last-turn-toast">
-      <span class="last-turn-icon">⚠</span>
-      <span>
-        <strong>{gameStore.playerName(stuckPlayer)}</strong> has no valid moves —
-        last turn for <strong>{gameStore.playerName(lastTurnPlayer)}</strong>!
+  <!-- Follower prompt: which suit/axis the leader committed to -->
+  {#if showFollowBanner && lead}
+    <div class="follow-banner">
+      <span class="follow-led">Leader played</span>
+      <span class="follow-card" style:color={SUIT_COLOR[lead.suit]}>
+        {lead.value} {SUIT_SYMBOL[lead.suit]}
       </span>
-      <button class="last-turn-dismiss" onclick={() => showLastTurnToast = false}>✕</button>
+      <span class="follow-sep">·</span>
+      <span class="follow-instr">
+        Follow <strong style:color={SUIT_COLOR[lead.suit]}>{lead.suit}</strong>
+        if you can, into a <strong>{followAxis}</strong>
+      </span>
     </div>
   {/if}
 
@@ -356,32 +344,20 @@
                   <thead>
                     <tr>
                       <th></th>
-                      <th>Pips</th>
-                      <th class="op">×</th>
-                      <th>Ht</th>
-                      <th class="op">×</th>
-                      <th>St</th>
-                      <th class="op">=</th>
-                      <th>Pts</th>
+                      <th>Points</th>
                     </tr>
                   </thead>
                   <tbody>
                     {#each rows as row}
-                      <tr class:zero={row.score === 0}>
+                      <tr class:zero={row.points === total}>
                         <td class="suit" style="color:{SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
-                        <td>{row.maxPips || '—'}</td>
-                        <td class="op">×</td>
-                        <td>{row.tallestStack || '—'}</td>
-                        <td class="op">×</td>
-                        <td>{row.numStacks || '—'}</td>
-                        <td class="op">=</td>
-                        <td class="pts">{row.score || '—'}</td>
+                        <td class="pts">{row.points}</td>
                       </tr>
                     {/each}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colspan="7" class="total-label">Total</td>
+                      <td class="total-label">min</td>
                       <td class="total-pts">{total}</td>
                     </tr>
                   </tfoot>
@@ -727,21 +703,21 @@
     100% { opacity: 0; }
   }
 
-  .last-turn-toast {
+  .follow-banner {
     position: absolute;
     top: 12px;
     left: 50%;
     translate: -50% 0;
-    background: rgba(30, 20, 5, 0.95);
-    border: 1px solid rgba(255, 180, 0, 0.45);
-    color: #ffd700;
+    background: rgba(35, 28, 5, 0.95);
+    border: 1px solid rgba(255, 215, 0, 0.45);
+    color: #f5e7b0;
     font-size: 13px;
-    padding: 10px 14px 10px 12px;
+    padding: 9px 16px;
     border-radius: 10px;
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     max-width: 90vw;
     animation: toast-slide-in 0.3s ease;
   }
@@ -751,24 +727,16 @@
     to   { opacity: 1; translate: -50% 0; }
   }
 
-  .last-turn-toast strong { color: #fff; }
-
-  .last-turn-icon {
-    font-size: 15px;
-    flex-shrink: 0;
+  .follow-led {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(245, 231, 176, 0.6);
   }
 
-  .last-turn-dismiss {
-    background: none;
-    border: none;
-    color: rgba(255,255,255,0.3);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 0 2px;
-    flex-shrink: 0;
-  }
-
-  .last-turn-dismiss:hover { color: rgba(255,255,255,0.7); }
+  .follow-card { font-weight: 800; font-size: 15px; }
+  .follow-sep  { color: rgba(255, 215, 0, 0.4); }
+  .follow-instr strong { text-transform: capitalize; }
 
   .overlay {
     position: absolute;
@@ -881,13 +849,6 @@
 
   .result-table td:first-child { text-align: left; }
   .result-table th:first-child { text-align: left; }
-
-  .result-table .op {
-    color: #444;
-    font-size: 8px;
-    padding: 0 1px;
-    text-align: center;
-  }
 
   .result-table .suit { font-size: 13px; }
   .result-table .pts  { font-weight: 600; color: #ccc; }

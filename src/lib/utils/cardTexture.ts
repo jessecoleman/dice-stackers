@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Card } from '$lib/gameStore.svelte';
+import type { Face } from '$lib/gameStore.svelte';
 
 const SUIT_SYMBOL: Record<string, string> = {
   red:    '♥',
@@ -8,76 +8,101 @@ const SUIT_SYMBOL: Record<string, string> = {
   blue:   '♦',
 };
 
+// Deeper palette for the flat (unlit) 3D card faces, so white text has strong
+// contrast against the background.
 const SUIT_BG: Record<string, string> = {
-  red:    '#e53e3e',
-  green:  '#38a169',
-  yellow: '#d69e2e',
-  blue:   '#3b82f6',
+  red:    '#a82020',
+  green:  '#1f6b40',
+  yellow: '#9a6a12',
+  blue:   '#1f4fa8',
 };
 
 /**
- * Renders a playing-card face onto a canvas and returns a CanvasTexture.
+ * Renders a dual-sided card onto a canvas and returns a CanvasTexture. The active
+ * (up) face fills the upper region, the inactive (down) face the lower, split by a
+ * shallow (~30°) diagonal running low-left → high-right — matching the 2D hand card.
  * Caller is responsible for calling texture.dispose() when done.
  */
-export function createCardTexture(card: Card): THREE.CanvasTexture {
+export function createCardTexture(up: Face, down: Face): THREE.CanvasTexture {
   const W = 128;
   const H = 180;
+  // Seam crosses the left edge at 70% height and the right edge at 30%.
+  const yL = 0.70 * H;
+  const yR = 0.30 * H;
+  const GAP = 1.5; // half-thickness of the dark seam between the two halves
 
   const canvas = document.createElement('canvas');
   canvas.width  = W;
   canvas.height = H;
-
   const ctx = canvas.getContext('2d')!;
-  const bg  = SUIT_BG[card.suit];
-  const sym = SUIT_SYMBOL[card.suit];
-  const val = String(card.value);
 
-  // Solid colour fill
-  ctx.fillStyle = bg;
+  // Dark base (shows through the seam)
+  ctx.fillStyle = '#1a1a1a';
   roundRect(ctx, 0, 0, W, H, 12);
   ctx.fill();
 
-  // Shadow helper
+  // Clip everything to the rounded-rect card outline
+  ctx.save();
+  roundRect(ctx, 0, 0, W, H, 12);
+  ctx.clip();
+
   function setShadow(blur: number, offsetY = 1) {
-    ctx.shadowColor  = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur   = blur;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = blur;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = offsetY;
   }
   function clearShadow() {
-    ctx.shadowColor  = 'transparent';
-    ctx.shadowBlur   = 0;
-    ctx.shadowOffsetX = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
   }
 
-  // Large number
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.font = 'bold 72px Georgia, serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  setShadow(6, 2);
-  ctx.fillText(val, W / 2, H / 2 - 16);
+  // Draw one triangular half filled with its colour + a corner label.
+  function half(face: Face, region: [number, number][], corner: 'tl' | 'br') {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(region[0][0], region[0][1]);
+    for (let i = 1; i < region.length; i++) ctx.lineTo(region[i][0], region[i][1]);
+    ctx.closePath();
+    ctx.clip();
 
-  // Suit symbol below the number
-  ctx.font = '38px Georgia, serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  setShadow(5, 2);
-  ctx.fillText(sym, W / 2, H / 2 + 38);
-  clearShadow();
+    ctx.fillStyle = SUIT_BG[face.suit];
+    ctx.fillRect(0, 0, W, H);
 
-  // Top-left corner label (value + suit side by side)
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.font = 'bold 30px Georgia, serif';
-  ctx.textAlign = 'left';
-  setShadow(4, 1);
-  ctx.fillText(val, 10, 8);
-  const valWidth = ctx.measureText(val).width;
-  ctx.font = '24px Georgia, serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText(sym, 10 + valWidth + 3, 11);
-  clearShadow();
+    // Corner label: value + suit symbol
+    const val = String(face.value);
+    setShadow(4, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.97)';
+    ctx.font = 'bold 30px Georgia, serif';
+    if (corner === 'tl') {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(val, 11, 9);
+      const w = ctx.measureText(val).width;
+      ctx.font = '22px Georgia, serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillText(SUIT_SYMBOL[face.suit], 11 + w + 3, 13);
+    } else {
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.font = '22px Georgia, serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillText(SUIT_SYMBOL[face.suit], W - 11, H - 11);
+      const w = ctx.measureText(SUIT_SYMBOL[face.suit]).width;
+      ctx.font = 'bold 30px Georgia, serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.97)';
+      ctx.fillText(val, W - 11 - w - 3, H - 9);
+    }
+    clearShadow();
+    ctx.restore();
+  }
+
+  // Active (up) face: upper region; Inactive (down): lower region. GAP leaves a seam.
+  half(up,   [[0, 0], [W, 0], [W, yR - GAP], [0, yL - GAP]], 'tl');
+  half(down, [[0, yL + GAP], [W, yR + GAP], [W, H], [0, H]], 'br');
+
+  ctx.restore();
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

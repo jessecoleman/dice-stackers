@@ -1,7 +1,7 @@
 <script lang="ts">
   import { T } from '@threlte/core';
   import * as THREE from 'three';
-  import { gameStore, PLAYER_EDGES, type Edge } from '$lib/gameStore.svelte';
+  import { gameStore, PLAYER_EDGES, edgeFor, upFace, type Edge, type Axis } from '$lib/gameStore.svelte';
   import CardSlotCard from './CardSlotCard.svelte';
   import emptyStackUrl from '$lib/assets/empty-stack.svg?url';
 
@@ -50,16 +50,39 @@
   );
   const sel    = $derived(gameStore.selectedCard);
 
-  // This slot is a valid drop target when the seated player owns this edge,
-  // has a card selected, and the play is legal.
+  // Which player owns this edge, and which stack-axis it represents.
+  const ownerPlayer = $derived<1 | 2>(PLAYER_EDGES[1].includes(edge) ? 1 : 2);
+  const axis = $derived<Axis>(edge === 'top' || edge === 'bottom' ? 'col' : 'row');
+
+  // This slot holds the current trick's lead card when it sits on the leader's
+  // stack for the led axis/line. The lead card is always the top of that stack.
+  const trick = $derived(gameStore.trick);
+  const isLeadSlot = $derived(
+    trick !== null &&
+    edge === edgeFor(trick.player, trick.axis) &&
+    index === trick.line
+  );
+
+  // This slot is a valid target when the seated player owns this edge, it's the
+  // current player's turn, a card is selected, and the lead/follow play is legal.
   const seatOwnsEdge = $derived(
     gameStore.seat === null || PLAYER_EDGES[gameStore.seat].includes(edge)
   );
   const isValid = $derived(
     seatOwnsEdge &&
     sel !== null &&
-    gameStore.canPlayToEdge(sel.player, edge) &&
-    gameStore.isValidStackOrder(edge, index, sel.card)
+    ownerPlayer === gameStore.currentPlayer &&
+    gameStore.canPlayToStack(axis, index)
+  );
+
+  // When the active player has a card selected, their own stacks that can't take
+  // it (full, wrong axis, or die-colour already present in the target cell) are
+  // dimmed so the legal targets stand out.
+  const isDimmed = $derived(
+    sel !== null &&
+    seatOwnsEdge &&
+    ownerPlayer === gameStore.currentPlayer &&
+    !isValid
   );
 
   let hovered = $state(false);
@@ -152,8 +175,9 @@
       oz={i * CARD_SPREAD * spreadZ}
       {faceRotZ}
       cardH={CARD_H}
-      suitColor={SUIT_COLOR[card.suit] ?? '#888'}
+      suitColor={SUIT_COLOR[upFace(card).suit] ?? '#888'}
       {isLogHovered}
+      isLead={isLeadSlot && i === cards.length - 1}
     />
   {/each}
 
@@ -162,7 +186,7 @@
     position={[0, 0.2, 0]}
     onpointerenter={(e: any) => { e.stopPropagation(); if (isValid) hovered = true; }}
     onpointerleave={(e: any) => { e.stopPropagation(); hovered = false; }}
-    onclick={(e: any) => { e.stopPropagation(); if (isValid) gameStore.playCardToSlot(edge, index as 0 | 1 | 2); }}
+    onclick={(e: any) => { e.stopPropagation(); if (isValid) gameStore.playCard(axis, index as 0 | 1 | 2); }}
   >
     <T.BoxGeometry args={[cardW + 0.06, 0.4, cardD + 0.06]} />
     <T.MeshStandardMaterial
@@ -184,6 +208,18 @@
         transparent
         opacity={hovered ? 0.6 : 0.3}
       />
+    </T.Mesh>
+  {/if}
+
+  <!-- Illegal-stack dim wash: dark overlay covering the stacked cards ───────── -->
+  {#if isDimmed && cards.length > 0}
+    {@const ext = (cards.length - 1) * CARD_SPREAD}
+    <T.Mesh
+      position={[ext / 2 * spreadX, 0.012 + cards.length * CARD_GAP, ext / 2 * spreadZ]}
+      rotation={[-Math.PI / 2, 0, 0]}
+    >
+      <T.PlaneGeometry args={[cardW + Math.abs(spreadX) * ext + 0.04, cardD + Math.abs(spreadZ) * ext + 0.04]} />
+      <T.MeshBasicMaterial color="#000000" transparent opacity={0.5} depthWrite={false} />
     </T.Mesh>
   {/if}
 

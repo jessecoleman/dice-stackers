@@ -1,22 +1,33 @@
 import {
   suits,
-  canPlayToEdge,
-  isValidStackOrder,
-  isCellValidForDiePlacement,
-  isCellNoPlacementWarning as _isCellNoPlacementWarning,
+  isValidLead,
+  isValidFollow,
+  stackHasRoom,
+  slotKey,
+  edgeFor,
+  intersectionCell,
+  upFace,
+  beats,
+  finalScore,
+  currentRound,
   type Suit,
   type Die,
   type CellStack,
   type Card,
+  type PlacedCard,
+  type Face,
+  type Orientation,
   type Edge,
+  type Axis,
+  type ColorPoints,
   type GameState,
   type EventLogEntry,
   type Action,
   PLAYER_EDGES,
 } from '$lib/gameLogic';
 
-export { suits, PLAYER_EDGES };
-export type { Suit, Die, CellStack, Card, Edge, GameState, EventLogEntry };
+export { suits, PLAYER_EDGES, slotKey, edgeFor, upFace, beats, finalScore };
+export type { Suit, Die, CellStack, Card, PlacedCard, Face, Orientation, Edge, Axis, ColorPoints, GameState, EventLogEntry };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -28,7 +39,7 @@ type HoverHighlight =
 
 function createGameStore() {
   let serverState = $state<GameState | null>(null);
-  let selectedCard = $state<{ player: 1 | 2; card: Card } | null>(null);
+  let selectedCard = $state<{ player: 1 | 2; card: Card; orientation: Orientation } | null>(null);
   let roomId = $state<string | null>(null);
   let seat = $state<1 | 2 | null>(null);
   let hoverHighlight = $state<HoverHighlight>(null);
@@ -75,8 +86,15 @@ function createGameStore() {
     get drawPile() { return serverState?.drawPile ?? []; },
     get cardSlots() { return serverState?.cardSlots ?? {}; },
     get currentPlayer() { return serverState?.currentPlayer ?? 1; },
-    get pendingDiePlacement() { return serverState?.pendingDiePlacement ?? null; },
+    get trick() { return serverState?.trick ?? null; },
+    /** True when the current player must lead (no trick in progress). */
+    get isLeading() { return (serverState?.trick ?? null) === null; },
     get gamePhase() { return serverState?.phase ?? 'playing'; },
+    get round() { return serverState ? currentRound(serverState) : 1; },
+    get player1Score() { return serverState?.player1Score ?? { red: 0, green: 0, blue: 0 }; },
+    get player2Score() { return serverState?.player2Score ?? { red: 0, green: 0, blue: 0 }; },
+    scoreOf(p: 1 | 2): ColorPoints { return p === 1 ? this.player1Score : this.player2Score; },
+    finalScoreOf(p: 1 | 2): number { return finalScore(this.scoreOf(p)); },
     get player2Joined() { return serverState?.player2Joined ?? false; },
     get player1Name() { return serverState?.player1Name ?? 'Player 1'; },
     get player2Name() { return serverState?.player2Name ?? 'Player 2'; },
@@ -93,9 +111,17 @@ function createGameStore() {
     // ── Client-only selection ───────────────────────────────────────────────
 
     selectCard(player: 1 | 2, card: Card) {
-      if (serverState?.pendingDiePlacement) return;
       if (player !== serverState?.currentPlayer) return;
-      selectedCard = selectedCard?.card.id === card.id ? null : { player, card };
+      // Toggle off if re-clicking the same card; default orientation 0 on select.
+      selectedCard = selectedCard?.card.id === card.id ? null : { player, card, orientation: 0 };
+    },
+
+    /** Currently-chosen face of the selected card (which side is up). */
+    get selectedOrientation(): Orientation { return selectedCard?.orientation ?? 0; },
+
+    /** Flip which face of the selected card is up. */
+    flipSelected() {
+      if (selectedCard) selectedCard = { ...selectedCard, orientation: selectedCard.orientation === 0 ? 1 : 0 };
     },
 
     deselectCard() {
@@ -104,53 +130,34 @@ function createGameStore() {
 
     // ── Validation helpers (pure, use server state) ─────────────────────────
 
-    canPlayToEdge(player: 1 | 2, edge: Edge): boolean {
-      return canPlayToEdge(player, edge);
-    },
-
-    isValidStackOrder(edge: Edge, index: 0 | 1 | 2, card: Card): boolean {
-      return isValidStackOrder(serverState?.cardSlots ?? {}, edge, index, card);
-    },
-
-    isCellValidForDiePlacement(row: number, col: number): boolean {
-      const pending = serverState?.pendingDiePlacement;
-      if (!pending) return false;
-      return isCellValidForDiePlacement(serverState?.grid ?? emptyGrid, pending, row, col);
-    },
-
-    isCellNoPlacementWarning(row: number, col: number): boolean {
+    /** Can the selected card (at its chosen orientation) legally be played into this axis-stack? */
+    canPlayToStack(axis: Axis, line: 0 | 1 | 2): boolean {
       if (!selectedCard || !serverState) return false;
-      return _isCellNoPlacementWarning(
-        serverState.grid,
-        serverState.cardSlots,
-        selectedCard.card,
-        selectedCard.player,
-        row,
-        col,
-      );
+      const { card, orientation } = selectedCard;
+      return serverState.trick
+        ? isValidFollow(serverState, card, orientation, axis, line)
+        : isValidLead(serverState, axis, line);
+    },
+
+    stackHasRoom(player: 1 | 2, axis: Axis, line: 0 | 1 | 2): boolean {
+      if (!serverState) return false;
+      return stackHasRoom(serverState, player, axis, line);
+    },
+
+    /** Cell where a follow play into (axis,line) would drop its die, or null when leading. */
+    followCell(line: 0 | 1 | 2): { row: number; col: number } | null {
+      if (!serverState?.trick) return null;
+      return intersectionCell(serverState.trick.axis, serverState.trick.line, line);
     },
 
     // ── Actions (send to server) ────────────────────────────────────────────
 
-    async playCardToSlot(edge: Edge, index: 0 | 1 | 2) {
-      if (!selectedCard || serverState?.pendingDiePlacement) return;
-      const card = selectedCard.card;
+    /** Play the selected card (at its chosen orientation) into an axis-stack. */
+    async playCard(axis: Axis, line: 0 | 1 | 2) {
+      if (!selectedCard) return;
+      const { card, orientation } = selectedCard;
       selectedCard = null;
-      await sendAction({ type: 'PLAY_CARD', card, edge, index });
-    },
-
-    async placeDieOnCell(row: number, col: number) {
-      await sendAction({ type: 'PLACE_DIE', row, col });
-    },
-
-    async drawToSix() {
-      if (serverState?.pendingDiePlacement) return;
-      selectedCard = null;
-      await sendAction({ type: 'DRAW_TO_SIX' });
-    },
-
-    async cancelTurn() {
-      await sendAction({ type: 'CANCEL_PLAY' });
+      await sendAction({ type: 'PLAY_CARD', card, orientation, axis, line });
     },
 
     /** Save the seated player's display name to the server. */
@@ -186,10 +193,8 @@ function createGameStore() {
       if (res.ok) serverState = await res.json();
     },
 
-    /** Legacy single-draw no longer used; kept so DrawPile doesn't break at compile time. */
-    drawCard() {
-      return this.drawToSix();
-    },
+    /** Legacy no-op: drawing is now automatic (hands refill after each trick). */
+    drawCard() {},
   };
 }
 
