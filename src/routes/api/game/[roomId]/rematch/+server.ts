@@ -14,6 +14,22 @@ export const POST: RequestHandler = async ({ params, request, platform }) => {
   // Already paired — nothing to do
   if (state.rematchRoomId) return json(state);
 
+  // vs AI: the bot can't vote, so one human request pairs immediately, human stays P1.
+  if (state.vsAI) {
+    const newRoomId = generateRoomId();
+    const newState = createInitialState(newRoomId);
+    newState.vsAI = true;
+    newState.player2Joined = true;
+    newState.player1Name = state.player1Name;
+    newState.player2Name = state.player2Name;
+    await saveGame(kv, newState);
+
+    state.rematchRoomId = newRoomId;
+    state.updatedAt = Date.now();
+    await saveGame(kv, state);
+    return json(state);
+  }
+
   // This player already voted — nothing to do
   if (state.rematchRequestedBy === player) return json(state);
 

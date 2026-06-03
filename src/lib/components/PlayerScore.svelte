@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
-  import { gameStore, suits } from '$lib/gameStore.svelte';
+  import { gameStore, suits, colorWins, colorLeader } from '$lib/gameStore.svelte';
   import { computePosition, offset, flip, shift } from '@floating-ui/dom';
 
   // Svelte action: positions a tooltip element relative to its anchor using Floating UI.
@@ -51,14 +51,14 @@
     red: '♥', green: '♣', yellow: '★', blue: '♦',
   };
 
-  // Per-colour point pools (die-difference during play + poker at end).
-  // The game score is the MINIMUM across the three colours, so diversifying matters.
+  // Per-colour point pools (die placement during play + poker at end). You win the
+  // game by leading the majority in 2 of the 3 colours, so `total` tracks how many
+  // colours this player currently leads, and led colours are highlighted.
   const pool = $derived(gameStore.scoreOf(player));
   const rows = $derived(suits.map(suit => ({ suit, points: pool[suit] })));
-  const total = $derived(gameStore.finalScoreOf(player));
-  const minColor = $derived(
-    rows.reduce((m, r) => (r.points < m.points ? r : m), rows[0])?.suit
-  );
+  const pools = $derived({ p1: gameStore.scoreOf(1), p2: gameStore.scoreOf(2) });
+  const total = $derived(colorWins(pools.p1, pools.p2)[player === 1 ? 'p1' : 'p2']);
+  const ledColors = $derived(suits.filter(s => colorLeader(pools.p1, pools.p2, s) === player));
 
   // ── Flash + tween tracking ────────────────────────────────────────────────────
   type FlashDir = 'up' | 'down' | null;
@@ -139,12 +139,12 @@
     <thead>
       <tr>
         <th></th>
-        <th class="tip" use:tooltip={"Points in this colour, from die differences during play and won poker hands at the end"}>Points</th>
+        <th class="tip" use:tooltip={"Points in this colour, from dice you place during play (value × stack height) and won poker hands at the end"}>Points</th>
       </tr>
     </thead>
     <tbody>
       {#each rows as row}
-        <tr class:min-row={row.suit === minColor}>
+        <tr class:led-row={ledColors.includes(row.suit)}>
           <td class="suit" style="color: {SUIT_COLOR[row.suit]}"
               class:hoverable={row.points > 0}
               onmouseenter={() => highlight(suitCells(row.suit))}
@@ -162,7 +162,7 @@
     </tbody>
     <tfoot>
       <tr>
-        <td class="total-label tip" use:tooltip={"Your score is the lowest of your three colour totals — diversify!"}>min</td>
+        <td class="total-label tip" use:tooltip={"Colours you currently lead — take the majority in 2 of 3 to win"}>colors</td>
         <td class="total-score"
             class:flash-up={flashTotal === 'up'}
             class:flash-down={flashTotal === 'down'}
@@ -202,7 +202,7 @@
           </thead>
           <tbody>
             {#each rows as row}
-              <tr class:min-row={row.suit === minColor}>
+              <tr class:led-row={ledColors.includes(row.suit)}>
                 <td class="suit" style="color: {SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
                 <td class="score"
                     class:flash-up={flashStates[`${row.suit}-points`] === 'up'}
@@ -213,7 +213,7 @@
           </tbody>
           <tfoot>
             <tr>
-              <td class="total-label">min</td>
+              <td class="total-label">colors</td>
               <td class="total-score"
                   class:flash-up={flashTotal === 'up'}
                   class:flash-down={flashTotal === 'down'}
@@ -300,9 +300,9 @@
 
   .score { font-weight: 600; color: #ccc; }
 
-  /* The colour currently setting your min score (the bottleneck). */
-  .min-row .score { color: #ffd700; }
-  .min-row .suit  { opacity: 1; }
+  /* A colour this player currently leads (counts toward their majority). */
+  .led-row .score { color: #ffd700; }
+  .led-row .suit  { opacity: 1; }
 
   tfoot tr { border-top: 1px solid rgba(255,255,255,0.1); }
 

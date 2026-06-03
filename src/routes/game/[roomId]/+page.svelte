@@ -36,7 +36,7 @@
   import EventLog from '$lib/components/EventLog.svelte';
   import RulesModal from '$lib/components/RulesModal.svelte';
   import NameModal from '$lib/components/NameModal.svelte';
-  import { gameStore, suits } from '$lib/gameStore.svelte';
+  import { gameStore, suits, pokerLanes, colorWins, colorLeader, gameWinner, HAND_CATEGORY_NAMES, type ColorPoints, type PokerLane } from '$lib/gameStore.svelte';
   import { playYourTurnChime, playPlayerJoined } from '$lib/utils/sounds';
   import type { PageData } from './$types';
 
@@ -83,19 +83,10 @@
     (seat === null || gameStore.currentPlayer === seat)
   );
 
-  // Per-colour pools → each player's rows; final score is the min across colours.
-  function calcRows(player: 1 | 2) {
-    const pool = gameStore.scoreOf(player);
-    return suits.map(suit => ({ suit, points: pool[suit] }));
-  }
-
-  const rows1  = $derived(calcRows(1));
-  const rows2  = $derived(calcRows(2));
-  const score1 = $derived(gameStore.finalScoreOf(1));
-  const score2 = $derived(gameStore.finalScoreOf(2));
-  const winner = $derived(
-    score1 > score2 ? 1 : score2 > score1 ? 2 : null
-  );
+  // Winner: majority in ≥2 colours, tiebroken by larger second-highest colour. Based
+  // on the final pools; the expanded tables animate via the displayed pools below.
+  const winner = $derived(gameWinner(gameStore.scoreOf(1), gameStore.scoreOf(2)));
+  const finalColorsWon = $derived(colorWins(gameStore.scoreOf(1), gameStore.scoreOf(2)));
 
   let resultMinimized = $state(false);
 
@@ -111,6 +102,51 @@
     }
   });
   onDestroy(() => { if (expandTimer) clearTimeout(expandTimer); });
+
+  // ── Game-over poker reveal: score the six lanes one at a time ────────────────
+  const lanes = $derived(
+    gameStore.gamePhase === 'game-over' ? pokerLanes(gameStore.cardSlots) : []
+  );
+  let revealedLanes = $state(0);
+  let laneTimer: ReturnType<typeof setInterval> | null = null;
+  let laneRevealStarted = false;
+
+  // Once the expanded result card is shown, reveal/score the lanes on a cadence.
+  $effect(() => {
+    if (gameStore.gamePhase === 'game-over' && !resultMinimized && !laneRevealStarted) {
+      laneRevealStarted = true;
+      laneTimer = setInterval(() => {
+        revealedLanes += 1;
+        if (revealedLanes >= lanes.length && laneTimer) {
+          clearInterval(laneTimer);
+          laneTimer = null;
+        }
+      }, 850);
+    }
+  });
+  onDestroy(() => { if (laneTimer) clearInterval(laneTimer); });
+
+  // A player's pool as shown mid-reveal: the final pool minus points from lanes not
+  // yet revealed, so each total climbs from die-only up to its final value.
+  function displayedPool(p: 1 | 2): ColorPoints {
+    const f = gameStore.scoreOf(p);
+    const acc: ColorPoints = { red: f.red, green: f.green, blue: f.blue };
+    for (let i = revealedLanes; i < lanes.length; i++) {
+      if (lanes[i].winner === p) for (const s of suits) acc[s] -= lanes[i].points[s];
+    }
+    return acc;
+  }
+
+  const dispPool1 = $derived(displayedPool(1));
+  const dispPool2 = $derived(displayedPool(2));
+  const dispRows1 = $derived(suits.map(suit => ({ suit, points: dispPool1[suit] })));
+  const dispRows2 = $derived(suits.map(suit => ({ suit, points: dispPool2[suit] })));
+  const dispColorsWon = $derived(colorWins(dispPool1, dispPool2));
+
+  /** Nonzero per-colour awards for a lane, for the verdict badges. */
+  function laneAward(lane: PokerLane) {
+    return suits.filter(s => lane.points[s] > 0).map(s => ({ suit: s, n: lane.points[s] }));
+  }
 
   // ── Rematch ────────────────────────────────────────────────────────────────
   let rematchPending = $state(false);
@@ -313,7 +349,7 @@
             out:send={{ key: 'result-title' }}
           >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</span>
         </div>
-        <span class="minimized-scores">{score1} – {score2}</span>
+        <span class="minimized-scores">{finalColorsWon.p1} – {finalColorsWon.p2}</span>
         <button class="minimized-restore" onclick={() => resultMinimized = false}>View Results</button>
       </div>
     {:else}
@@ -332,11 +368,11 @@
             >{winner === null ? 'Draw!' : `${gameStore.playerName(winner)} wins!`}</div>
           </div>
 
-          <!-- Score tables side by side -->
+          <!-- Score tables side by side (totals climb as lanes are scored) -->
           <div class="result-tables">
             {#each ([1, 2] as const) as p}
-              {@const rows = p === 1 ? rows1 : rows2}
-              {@const total = p === 1 ? score1 : score2}
+              {@const rows = p === 1 ? dispRows1 : dispRows2}
+              {@const colorsWon = p === 1 ? dispColorsWon.p1 : dispColorsWon.p2}
               <div class="result-table-wrap" class:result-winner-col={winner === p}>
                 <div class="result-table-name">{gameStore.playerName(p)}</div>
                 <table class="result-table">
@@ -348,7 +384,7 @@
                   </thead>
                   <tbody>
                     {#each rows as row}
-                      <tr class:zero={row.points === total}>
+                      <tr class:leads={colorLeader(dispPool1, dispPool2, row.suit) === p}>
                         <td class="suit" style="color:{SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
                         <td class="pts">{row.points}</td>
                       </tr>
@@ -356,11 +392,52 @@
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td class="total-label">min</td>
-                      <td class="total-pts">{total}</td>
+                      <td class="total-label">colors</td>
+                      <td class="total-pts">{colorsWon}</td>
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            {/each}
+          </div>
+
+          <!-- Per-lane poker breakdown, revealed/scored one at a time -->
+          <div class="lanes-title">Lane scoring</div>
+          <div class="lanes">
+            {#each lanes as lane, i (lane.id)}
+              <div
+                class="lane"
+                class:revealed={i < revealedLanes}
+                class:scoring={i === revealedLanes - 1}
+                class:p1win={lane.winner === 1}
+                class:p2win={lane.winner === 2}
+              >
+                <div class="hand p1-hand">
+                  {#each lane.p1Faces as f}
+                    <span class="chip" style="background:{SUIT_COLOR[f.suit]}">{f.value}<span class="chip-sym">{SUIT_SYMBOL[f.suit]}</span></span>
+                  {/each}
+                </div>
+                <div class="verdict">
+                  <span class="lane-id">{lane.id}</span>
+                  {#if lane.winner}
+                    {#if lane.category !== null}
+                      <span class="lane-cat">{HAND_CATEGORY_NAMES[lane.category]}</span>
+                    {/if}
+                    <div class="award">
+                      <span class="arrow">{lane.winner === 1 ? '◀' : '▶'}</span>
+                      {#each laneAward(lane) as a}
+                        <span class="award-pts" style="color:{SUIT_COLOR[a.suit]}">+{a.n}</span>
+                      {/each}
+                    </div>
+                  {:else}
+                    <span class="lane-tie">tie</span>
+                  {/if}
+                </div>
+                <div class="hand p2-hand">
+                  {#each lane.p2Faces as f}
+                    <span class="chip" style="background:{SUIT_COLOR[f.suit]}">{f.value}<span class="chip-sym">{SUIT_SYMBOL[f.suit]}</span></span>
+                  {/each}
+                </div>
               </div>
             {/each}
           </div>
@@ -851,7 +928,9 @@
 
   .result-table .suit { font-size: 13px; }
   .result-table .pts  { font-weight: 600; color: #ccc; }
-  .result-table .zero td { opacity: 0.35; }
+  /* A colour this player currently leads (counts toward their majority). */
+  .result-table .leads .pts  { color: #ffd700; }
+  .result-table .leads .suit { font-weight: 700; }
 
   .result-table tfoot tr { border-top: 1px solid rgba(255,255,255,0.1); }
 
@@ -868,6 +947,108 @@
     font-weight: 700;
     color: #ffd700;
     padding-top: 5px;
+  }
+
+  /* ── Per-lane poker reveal ─────────────────────────────────────────────── */
+  .lanes-title {
+    align-self: flex-start;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.35);
+    margin: -4px 0 -8px;
+  }
+
+  .lanes {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 230px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
+  }
+
+  .lane {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    opacity: 0.18;
+    transition: opacity 0.35s ease;
+  }
+
+  .lane.revealed { opacity: 1; }
+  .lane.scoring.p1win { animation: laneFlashP1 0.85s ease; }
+  .lane.scoring.p2win { animation: laneFlashP2 0.85s ease; }
+
+  .hand { display: flex; gap: 3px; }
+  .p1-hand { justify-content: flex-end; }
+  .p2-hand { justify-content: flex-start; }
+  /* Dim the losing hand once a lane is resolved */
+  .lane.revealed.p2win .p1-hand,
+  .lane.revealed.p1win .p2-hand { opacity: 0.35; }
+
+  .chip {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    min-width: 22px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    color: #fff;
+    font: 700 13px Georgia, serif;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+
+  .chip-sym { font-size: 9px; margin-left: 1px; opacity: 0.9; }
+
+  .verdict {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    min-width: 92px;
+  }
+
+  .lane-id {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .lane-cat {
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+  }
+
+  .award {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  .lane.p2win .award { flex-direction: row-reverse; }
+  .arrow { color: #ffd700; font-size: 10px; }
+  .lane-tie { font-size: 10px; color: rgba(255, 255, 255, 0.3); }
+
+  @keyframes laneFlashP1 {
+    0%   { background: rgba(96, 165, 250, 0); }
+    35%  { background: rgba(96, 165, 250, 0.22); }
+    100% { background: rgba(96, 165, 250, 0); }
+  }
+  @keyframes laneFlashP2 {
+    0%   { background: rgba(244, 114, 182, 0); }
+    35%  { background: rgba(244, 114, 182, 0.22); }
+    100% { background: rgba(244, 114, 182, 0); }
   }
 
   /* Minimized bar */

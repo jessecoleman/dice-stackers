@@ -14,6 +14,8 @@ export const POST: RequestHandler = async ({ params, request, platform }) => {
   const result = applyAction(state, player, action);
   if (result.error) error(400, result.error);
 
+  // The human's move returns immediately. In an AI game the client paces the bot's
+  // reply via /ai-step so each move is delayed/visible, rather than resolving here.
   await saveGame(kv, result.state);
   return json(result.state);
 };

@@ -4,11 +4,15 @@
   let creating = $state(false);
   let error = $state<string | null>(null);
 
-  async function createGame() {
+  async function createGame(vsAI = false) {
     creating = true;
     error = null;
     try {
-      const res = await fetch('/api/game', { method: 'POST' });
+      const res = await fetch('/api/game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vsAI }),
+      });
       if (!res.ok) throw new Error('Failed to create game');
       const { roomId } = await res.json();
       await goto(`/game/${roomId}?seat=1`);
@@ -24,8 +28,12 @@
     <h1 class="title">Dice Game</h1>
     <p class="subtitle">A two-player strategy game</p>
 
-    <button class="create-btn" onclick={createGame} disabled={creating}>
+    <button class="create-btn" onclick={() => createGame(false)} disabled={creating}>
       {creating ? 'Creating…' : 'New Game'}
+    </button>
+
+    <button class="create-btn secondary" onclick={() => createGame(true)} disabled={creating}>
+      Play vs Computer
     </button>
 
     {#if error}
@@ -33,7 +41,8 @@
     {/if}
 
     <p class="hint">
-      Create a game, then share the Player 2 link shown on the next screen.
+      <strong>New Game</strong> creates a room to share with Player 2.
+      <strong>Play vs Computer</strong> starts immediately against the AI.
     </p>
   </div>
 </div>
@@ -96,6 +105,13 @@
 
   .create-btn:hover:not(:disabled) { opacity: 0.85; }
   .create-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .create-btn.secondary {
+    margin-top: 4px;
+    background: transparent;
+    border: 1px solid #ffd700;
+    color: #ffd700;
+  }
 
   .hint {
     font-size: 12px;

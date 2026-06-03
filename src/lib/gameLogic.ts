@@ -98,10 +98,12 @@ export interface GameState {
   cardSlots: Record<string, PlacedCard[]>;
   /** The lead awaiting a response, or null when the current player must lead. */
   trick: TrickLead | null;
-  /** Running per-colour point pools (die-difference during play + poker at end). */
+  /** Running per-colour point pools (die value × stack height during play + poker at end). */
   player1Score: ColorPoints;
   player2Score: ColorPoints;
   player2Joined: boolean;
+  /** When true, seat 2 is driven by the server-side heuristic AI (see ai.ts). */
+  vsAI?: boolean;
   player1Name: string;
   player2Name: string;
   eventLog: EventLogEntry[];
@@ -116,7 +118,8 @@ export type Action =
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const HAND_SIZE = 9;
+const HAND_SIZE = 9;            // 2 hands of 9 dealt over the game (18 cards/player)
+const LANES_PER_PLAYER = 6;     // 3 row stacks + 3 col stacks; also the even-fill layer size
 const ALL_EDGES: Edge[] = ['top', 'bottom', 'left', 'right'];
 const LINES = [0, 1, 2] as const;
 
@@ -150,23 +153,55 @@ export function finalScore(pool: ColorPoints): number {
   return Math.min(pool.red, pool.green, pool.blue);
 }
 
-// Deck: 3 colour pairings × 6 cards × 2 copies = 36 cards (18 unique combos).
-// Within a pairing the RPS-winning colour is "strong" and skews high.
-const SKEW_PAIRS: [number, number][] = [[6, 4], [6, 2], [5, 3], [5, 1], [4, 2], [3, 1]];
-const PAIRINGS: { strong: Suit; weak: Suit }[] = [
-  { strong: 'red', weak: 'green' },   // R ▸ G
-  { strong: 'green', weak: 'blue' },  // G ▸ B
-  { strong: 'blue', weak: 'red' },    // B ▸ R
+/** Per-colour majority counts: how many of R/G/B each pool strictly leads. */
+export function colorWins(p1: ColorPoints, p2: ColorPoints): { p1: number; p2: number } {
+  let a = 0, b = 0;
+  for (const s of suits) {
+    if (p1[s] > p2[s]) a++;
+    else if (p2[s] > p1[s]) b++;
+  }
+  return { p1: a, p2: b };
+}
+
+/** Which player leads colour `suit`, or null when tied. */
+export function colorLeader(p1: ColorPoints, p2: ColorPoints, suit: Suit): 1 | 2 | null {
+  if (p1[suit] > p2[suit]) return 1;
+  if (p2[suit] > p1[suit]) return 2;
+  return null;
+}
+
+/**
+ * Final winner: the player holding the majority in **≥2 of the three colours**. If
+ * neither does (each leads one, or colours tie), break the tie by the larger
+ * **second-highest** colour total; if those tie too, it's a draw.
+ */
+export function gameWinner(p1: ColorPoints, p2: ColorPoints): 1 | 2 | null {
+  const { p1: a, p2: b } = colorWins(p1, p2);
+  if (a >= 2) return 1;
+  if (b >= 2) return 2;
+  const secondHighest = (p: ColorPoints) => [p.red, p.green, p.blue].sort((x, y) => y - x)[1];
+  const s1 = secondHighest(p1), s2 = secondHighest(p2);
+  if (s1 !== s2) return s1 > s2 ? 1 : 2;
+  return null;
+}
+
+// Deck: 3 colour pairings × 6 ranks × 2 copies = 36 cards (18 unique combos).
+// Each card shows the SAME rank on both of its two colours.
+const RANKS = [1, 2, 3, 4, 5, 6] as const;
+const PAIRINGS: [Suit, Suit][] = [
+  ['red', 'green'],   // R ▸ G
+  ['green', 'blue'],  // G ▸ B
+  ['blue', 'red'],    // B ▸ R
 ];
 
 function buildDeck(): Card[] {
   const cards: Card[] = [];
-  for (const { strong, weak } of PAIRINGS) {
-    for (const [sv, wv] of SKEW_PAIRS) {
+  for (const [c1, c2] of PAIRINGS) {
+    for (const value of RANKS) {
       for (const copy of ['a', 'b'] as const) {
         cards.push({
-          id: `${strong}${sv}-${weak}${wv}-${copy}`,
-          faces: [{ suit: strong, value: sv }, { suit: weak, value: wv }],
+          id: `${c1}${value}-${c2}${value}-${copy}`,
+          faces: [{ suit: c1, value }, { suit: c2, value }],
         });
       }
     }
@@ -230,21 +265,25 @@ function poolOf(state: GameState, player: 1 | 2): ColorPoints {
   return player === 1 ? state.player1Score : state.player2Score;
 }
 
-/** Room in the card stack a player would use for (axis, line). */
-export function stackHasRoom(state: GameState, player: 1 | 2, axis: Axis, line: 0 | 1 | 2): boolean {
-  return (state.cardSlots[slotKey(edgeFor(player, axis), line)] ?? []).length < 3;
-}
-
-/** Total dice placed so far across the grid. */
-function totalDice(state: GameState): number {
+/** Total cards a player has committed across their six lanes this game. */
+function cardsPlayedBy(state: GameState, player: 1 | 2): number {
   let n = 0;
-  for (const row of state.grid) for (const cell of row) n += cell.dice.length;
+  for (const axis of ['row', 'col'] as Axis[])
+    for (const line of LINES)
+      n += (state.cardSlots[slotKey(edgeFor(player, axis), line)] ?? []).length;
   return n;
 }
 
-/** Current round: 1 = bottom layer (first 9 tricks), 2 = top layer (next 9). */
-export function currentRound(state: GameState): 1 | 2 {
-  return totalDice(state) < 9 ? 1 : 2;
+/**
+ * Whether a player may play into (axis, line) right now. Stacks must fill **evenly**:
+ * every lane reaches height 1 before any reaches 2, and 2 before any reaches 3. So a
+ * lane is open only when its height equals the current fill layer (0, 1, 2). This is
+ * independent of the 9-card hands — it's driven purely by the board.
+ */
+export function stackHasRoom(state: GameState, player: 1 | 2, axis: Axis, line: 0 | 1 | 2): boolean {
+  const stack = state.cardSlots[slotKey(edgeFor(player, axis), line)] ?? [];
+  const layer = Math.floor(cardsPlayedBy(state, player) / LANES_PER_PLAYER);  // 0, 1, 2
+  return stack.length < 3 && stack.length === layer;
 }
 
 /** The grid cell where a follow into `followLine` lands: intersection of the row- and col-lines. */
@@ -254,30 +293,28 @@ export function intersectionCell(axis: Axis, line: 0 | 1 | 2, followLine: 0 | 1 
   return { row: rowLine, col: colLine };
 }
 
-/** A die can land in a cell iff its height equals (round − 1): R1 onto empty, R2 onto height-1. */
-function cellHasRoomForRound(state: GameState, cell: { row: number; col: number }): boolean {
-  return state.grid[cell.row][cell.col].dice.length === currentRound(state) - 1;
-}
-
-/** Every cell with room for this round's die — used for the escape-valve placement. */
-function cellsWithRoom(state: GameState): { row: number; col: number }[] {
-  const out: { row: number; col: number }[] = [];
-  for (const row of state.grid) for (const cell of row) {
-    if (cell.dice.length === currentRound(state) - 1) out.push({ row: cell.row, col: cell.col });
-  }
-  return out;
-}
-
-/** True once every card stack holds 3 cards (equivalently, every grid cell is height 2). */
+/** True once every card stack holds 3 cards. */
 export function isBoardFull(cardSlots: Record<string, PlacedCard[]>): boolean {
   return ALL_EDGES.every(edge => LINES.every(i => (cardSlots[slotKey(edge, i)] ?? []).length === 3));
 }
 
+/** Who wins a trick given the lead and the follower's up-face (their suits always differ). */
+function followerWinsTrick(lead: TrickLead, followFace: Face): boolean {
+  if (followFace.value > lead.value) return true;
+  if (followFace.value < lead.value) return false;
+  return beats(followFace.suit, lead.suit);
+}
+
+/** A die may enter a cell only if no die of that colour is already there (caps height at 3). */
+export function cellAcceptsColor(state: GameState, cell: { row: number; col: number }, color: Suit): boolean {
+  return !state.grid[cell.row][cell.col].dice.some(d => d.color === color);
+}
+
 /**
- * Validate a lead: the current player has room in their own (axis, line) stack AND
- * the follower has at least one opposite-axis slot with room. Cell availability is
- * NOT required here — if the natural intersection cell is full, the die spills to
- * any open cell (escape valve), which keeps the game from deadlocking.
+ * Validate a lead: the leader has room in their own (axis, line) stack and the
+ * follower has at least one opposite-axis slot with room. Die placement is never a
+ * legality constraint — if the loser's die can't be placed, the trick just resolves
+ * without one (see applyAction), so a lead can never leave the follower stuck.
  */
 export function isValidLead(state: GameState, axis: Axis, line: 0 | 1 | 2): boolean {
   const leader = state.currentPlayer;
@@ -288,10 +325,9 @@ export function isValidLead(state: GameState, axis: Axis, line: 0 | 1 | 2): bool
 }
 
 /**
- * Validate a follow. The follower must:
- *  - play on the axis opposite the lead, into their own stack with room,
- *  - play an up-face whose colour is NOT the led suit (must-NOT-follow).
- * The die's cell is resolved at placement time (intersection, or escape valve).
+ * Validate a follow. The follower must play on the axis opposite the lead, into
+ * their own stack with room, with an up-face whose colour is NOT the led suit
+ * (must-NOT-follow). Whether a die can then be placed doesn't affect legality.
  */
 export function isValidFollow(
   state: GameState,
@@ -367,27 +403,65 @@ export function compareHands(a: HandRank, b: HandRank): number {
   return 0;
 }
 
-function slotFaces(state: GameState, edge: Edge, index: 0 | 1 | 2): Face[] {
-  return (state.cardSlots[slotKey(edge, index)] ?? []).map(upFace);
+export type LaneId = 'R0' | 'R1' | 'R2' | 'C0' | 'C1' | 'C2';
+
+/** Poker category names indexed by HandRank.cat (0 high card … 5 straight flush). */
+export const HAND_CATEGORY_NAMES = [
+  'High card', 'Pair', 'Flush', 'Straight', 'Three of a kind', 'Straight flush',
+] as const;
+
+/** One end-game poker matchup: a player's edge stack vs the opposing stack. */
+export interface PokerLane {
+  id: LaneId;
+  axis: Axis;
+  index: 0 | 1 | 2;
+  p1Faces: Face[];
+  p2Faces: Face[];
+  winner: 1 | 2 | null;     // null when tied or not yet full
+  category: number | null;  // winning hand's HandRank.cat (index into HAND_CATEGORY_NAMES)
+  points: ColorPoints;      // what the winner earns: each card's value in its colour
 }
 
-/** Award end-game poker points: each of the 6 opposing slot-pairs goes to the winner (+1 per card in its colour). */
-function awardPokerScores(s: GameState): void {
-  const pairs: { p1Edge: Edge; p2Edge: Edge }[] = [
-    { p1Edge: 'right', p2Edge: 'left' },   // row pairs (indexed by row)
-    { p1Edge: 'bottom', p2Edge: 'top' },   // col pairs (indexed by col)
-  ];
-  for (const { p1Edge, p2Edge } of pairs) {
+const LANE_PAIRS: { axis: Axis; p1Edge: Edge; p2Edge: Edge; prefix: 'R' | 'C' }[] = [
+  { axis: 'row', p1Edge: 'right',  p2Edge: 'left', prefix: 'R' },  // rows: R0–R2
+  { axis: 'col', p1Edge: 'bottom', p2Edge: 'top',  prefix: 'C' },  // cols: C0–C2
+];
+
+/**
+ * Break down the six end-game poker lanes. For each, the winning 3-card hand earns
+ * its owner points equal to **each card's value in that card's colour**. Used both
+ * to award the final scores and to drive the game-over lane-by-lane reveal.
+ */
+export function pokerLanes(cardSlots: Record<string, PlacedCard[]>): PokerLane[] {
+  const lanes: PokerLane[] = [];
+  for (const { axis, p1Edge, p2Edge, prefix } of LANE_PAIRS) {
     for (const i of LINES) {
-      const f1 = slotFaces(s, p1Edge, i);
-      const f2 = slotFaces(s, p2Edge, i);
-      if (f1.length < 3 || f2.length < 3) continue;
-      const cmp = compareHands(evaluateHand(f1), evaluateHand(f2));
-      if (cmp === 0) continue;
-      const winnerFaces = cmp > 0 ? f1 : f2;
-      const pool = cmp > 0 ? s.player1Score : s.player2Score;
-      for (const f of winnerFaces) addPoints(pool, f.suit, 1);
+      const p1Faces = (cardSlots[slotKey(p1Edge, i)] ?? []).map(upFace);
+      const p2Faces = (cardSlots[slotKey(p2Edge, i)] ?? []).map(upFace);
+      const points = zeroPoints();
+      let winner: 1 | 2 | null = null;
+      let category: number | null = null;
+      if (p1Faces.length === 3 && p2Faces.length === 3) {
+        const h1 = evaluateHand(p1Faces), h2 = evaluateHand(p2Faces);
+        const cmp = compareHands(h1, h2);
+        if (cmp !== 0) {
+          winner = cmp > 0 ? 1 : 2;
+          category = (cmp > 0 ? h1 : h2).cat;
+          for (const f of cmp > 0 ? p1Faces : p2Faces) addPoints(points, f.suit, f.value);
+        }
+      }
+      lanes.push({ id: `${prefix}${i}` as LaneId, axis, index: i, p1Faces, p2Faces, winner, category, points });
     }
+  }
+  return lanes;
+}
+
+/** Award end-game poker points from the lane breakdown into each player's pool. */
+function awardPokerScores(s: GameState): void {
+  for (const lane of pokerLanes(s.cardSlots)) {
+    if (!lane.winner) continue;
+    const pool = lane.winner === 1 ? s.player1Score : s.player2Score;
+    for (const suit of suits) addPoints(pool, suit, lane.points[suit]);
   }
 }
 
@@ -435,45 +509,37 @@ export function applyAction(
     axis, line, cardSuit: face.suit, cardValue: face.value,
   });
 
-  // Resolve the trick: higher up-face wins; RPS breaks ties (up-face suits always differ).
-  let followerWins: boolean;
-  if (face.value > lead.value) followerWins = true;
-  else if (face.value < lead.value) followerWins = false;
-  else followerWins = beats(face.suit, lead.suit);
-
+  // Resolve the trick: higher up-face wins; RPS breaks ties (up-face suits always
+  // differ). The winner leads next; the loser places & scores the die.
+  const followerWins = followerWinsTrick(lead, face);
   const winner: 1 | 2 = followerWins ? player : lead.player;
   const loser: 1 | 2 = followerWins ? lead.player : player;
-  // The loser's up-face becomes the die.
-  const loserFace: Face = followerWins ? { suit: lead.suit, value: lead.value } : face;
+  // The die is the LOSER's up-face (colour + value).
+  const dieFace: Face = followerWins ? { suit: lead.suit, value: lead.value } : face;
 
-  // Die lands at the row/col intersection; if that cell is already full for this
-  // round (escape valve), it spills to any cell with room — chosen deterministically
-  // (lowest row, then col) so client and server agree.
-  let target = intersectionCell(lead.axis, lead.line, line);
-  if (!cellHasRoomForRound(s, target)) {
-    const open = cellsWithRoom(s);
-    if (open.length === 0) return { state, error: 'No cell available for the die' };
-    target = open[0];
-  }
-  const { row, col } = target;
-  const cell = s.grid[row][col];
-  cell.dice.push({
-    id: `die-${loserFace.suit}-${loserFace.value}-${Date.now()}`,
-    color: loserFace.suit,
-    value: loserFace.value,
-    player: loser,
-  });
-
-  // Round-2 cap: the trick winner scores |difference| in the third colour (0 if same colour).
-  if (cell.dice.length === 2) {
-    const [bottom, top] = cell.dice;
-    const third = thirdColor(bottom.color, top.color);
-    if (third) addPoints(poolOf(s, winner), third, Math.abs(top.value - bottom.value));
+  // The die lands at the row/col intersection — but only if that cell holds no die
+  // of this colour yet (each cell caps at the 3 colours → height 3). If it already
+  // does, the trick still resolves but no die is placed and no points are scored.
+  const target = intersectionCell(lead.axis, lead.line, line);
+  const placedDie = cellAcceptsColor(s, target, dieFace.suit);
+  if (placedDie) {
+    const cell = s.grid[target.row][target.col];
+    cell.dice.push({
+      id: `die-${dieFace.suit}-${dieFace.value}-${Date.now()}`,
+      color: dieFace.suit,
+      value: dieFace.value,
+      player: loser,
+    });
+    // The loser scores the die's value × its height in the stack (1-indexed), in the
+    // die's colour: e.g. a 6 on the second level scores 12.
+    addPoints(poolOf(s, loser), dieFace.suit, dieFace.value * cell.dice.length);
   }
 
   s.eventLog.push({
     player: winner, action: 'won', detail: '', timestamp: Date.now(),
-    cell: { row, col }, dieColor: loserFace.suit, dieValue: loserFace.value,
+    ...(placedDie
+      ? { cell: target, dieColor: dieFace.suit, dieValue: dieFace.value }
+      : {}),
   });
 
   s.trick = null;

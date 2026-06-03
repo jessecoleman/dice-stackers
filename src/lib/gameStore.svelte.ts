@@ -9,7 +9,12 @@ import {
   upFace,
   beats,
   finalScore,
-  currentRound,
+  colorWins,
+  colorLeader,
+  gameWinner,
+  pokerLanes,
+  HAND_CATEGORY_NAMES,
+  type PokerLane,
   type Suit,
   type Die,
   type CellStack,
@@ -26,8 +31,8 @@ import {
   PLAYER_EDGES,
 } from '$lib/gameLogic';
 
-export { suits, PLAYER_EDGES, slotKey, edgeFor, upFace, beats, finalScore };
-export type { Suit, Die, CellStack, Card, PlacedCard, Face, Orientation, Edge, Axis, ColorPoints, GameState, EventLogEntry };
+export { suits, PLAYER_EDGES, slotKey, edgeFor, upFace, beats, finalScore, colorWins, colorLeader, gameWinner, pokerLanes, HAND_CATEGORY_NAMES };
+export type { Suit, Die, CellStack, Card, PlacedCard, Face, Orientation, Edge, Axis, ColorPoints, GameState, EventLogEntry, PokerLane };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +55,41 @@ function createGameStore() {
     Array.from({ length: 3 }, (_, c) => ({ row: r, col: c, dice: [] }))
   );
 
+  // ── AI pacing ─────────────────────────────────────────────────────────────
+  // In a vs-Computer game, seat 1 (the only human) drives the bot one move at a
+  // time with a delay between moves, so the AI's plays appear paced, not instant.
+  const AI_MOVE_DELAY_MS = 1200;
+  let aiRunning = false;
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+  function aiToMove(): boolean {
+    return seat === 1
+      && !!serverState?.vsAI
+      && serverState.phase === 'playing'
+      && serverState.currentPlayer === 2;
+  }
+
+  async function runAITurn(): Promise<void> {
+    if (aiRunning) return;
+    aiRunning = true;
+    try {
+      while (aiToMove()) {
+        await sleep(AI_MOVE_DELAY_MS);
+        if (!aiToMove() || !roomId) break;
+        const res = await fetch(`/api/game/${roomId}/ai-step`, { method: 'POST' });
+        if (res.ok) serverState = await res.json();
+        else break;
+      }
+    } finally {
+      aiRunning = false;
+    }
+  }
+
+  /** Kick off AI pacing if it's the bot's turn (self-guards against overlap). */
+  function maybeRunAI(): void {
+    if (aiToMove()) void runAITurn();
+  }
+
   async function sendAction(action: Action): Promise<void> {
     if (!roomId || seat === null || !serverState) return;
     const res = await fetch(`/api/game/${roomId}/action`, {
@@ -59,6 +99,7 @@ function createGameStore() {
     });
     if (res.ok) {
       serverState = await res.json();
+      maybeRunAI();
     }
   }
 
@@ -68,6 +109,10 @@ function createGameStore() {
       roomId = rid;
       seat = s;
       serverState = state;
+      // Defer: init runs inside the page's $effect.pre, and aiToMove() reads $state.
+      // Reading tracked state here would make that effect depend on serverState and
+      // loop (it also writes serverState). A microtask escapes the effect's tracking.
+      queueMicrotask(maybeRunAI);
     },
 
     /** Pull latest state from the server (used for polling). */
@@ -75,6 +120,7 @@ function createGameStore() {
       if (!roomId) return;
       const res = await fetch(`/api/game/${roomId}`);
       if (res.ok) serverState = await res.json();
+      maybeRunAI();
     },
 
     // ── Reactive getters ────────────────────────────────────────────────────
@@ -90,7 +136,6 @@ function createGameStore() {
     /** True when the current player must lead (no trick in progress). */
     get isLeading() { return (serverState?.trick ?? null) === null; },
     get gamePhase() { return serverState?.phase ?? 'playing'; },
-    get round() { return serverState ? currentRound(serverState) : 1; },
     get player1Score() { return serverState?.player1Score ?? { red: 0, green: 0, blue: 0 }; },
     get player2Score() { return serverState?.player2Score ?? { red: 0, green: 0, blue: 0 }; },
     scoreOf(p: 1 | 2): ColorPoints { return p === 1 ? this.player1Score : this.player2Score; },

@@ -20,57 +20,74 @@
 
     <section>
       <h3>Overview</h3>
-      <p>A trick-taking game for two on a 3×3 grid. Win tricks to place your color dice on the board, then score the most points. Play continues until every card stack is full.</p>
+      <p>A trick-taking game for two on a 3×3 grid. Each trick, the loser drops a colored die onto the board; meanwhile both players build poker hands along their edges. When every card stack is full, the higher score wins.</p>
+    </section>
+
+    <section>
+      <h3>Colors &amp; Cards</h3>
+      <p>Three suits — <strong>Red</strong>, <strong>Green</strong>, <strong>Blue</strong> — form a rock-paper-scissors cycle: <strong>Red beats Green, Green beats Blue, Blue beats Red</strong>. No color is strongest overall.</p>
+      <p>Every card is <strong>dual-sided</strong>: two colors sharing the <em>same number</em>. When you play a card you choose which color is face-up — that picks the suit, never the value.</p>
     </section>
 
     <section>
       <h3>Your Edges</h3>
-      <p>Each player owns two edges of the board, holding six card stacks in all:</p>
+      <p>Each player owns two edges, holding six card stacks in all:</p>
       <ul>
         <li><strong>Player 1</strong> — bottom &amp; right edges</li>
         <li><strong>Player 2</strong> — top &amp; left edges</li>
       </ul>
-      <p>Each edge has <strong>3 stacks</strong>, one per row or column, and each stack holds up to 3 cards.</p>
+      <p>Each edge has <strong>3 stacks</strong> (one per row or column), each holding up to 3 cards. These stacks become your <strong>poker hands</strong> at the end.</p>
+    </section>
+
+    <section>
+      <h3>Hands &amp; Even Fill</h3>
+      <p>You play <strong>2 hands of 9 cards</strong> over the game. Stacks must <strong>fill evenly</strong>: every one of your six lanes (3 rows + 3 columns) must reach height 1 before any reaches 2, and 2 before any reaches 3. So a lane is open only when it's at the current fill level — you can't load up one stack early.</p>
     </section>
 
     <section>
       <h3>Leading a Trick</h3>
-      <p>The leader plays one card from hand into any of their own stacks — on a <strong>row</strong> or a <strong>column</strong> — that still has room. There is no ordering restriction, and <em>no die is placed</em> when leading.</p>
+      <p>The leader plays a card into one of their own stacks on a chosen <strong>row</strong> or <strong>column</strong> that's still open under even-fill, choosing which color is up — this sets the <strong>led suit</strong> and value. <em>No die is placed when leading.</em></p>
     </section>
 
     <section>
       <h3>Following</h3>
-      <p>The opponent must respond on the <strong>opposite axis</strong>: if the leader played a row, the follower plays a column, and vice-versa. You must <strong>follow the led suit</strong> if you hold it. The follower places a die matching their card's color and value where the two stacks' row and column cross, stacked on whatever is already there.</p>
+      <p>The follower responds in one of their own stacks on the <strong>opposite axis</strong> (leader played a row → follower plays a column, and vice-versa) that's still open under even-fill. Key rule — <strong>you must NOT follow the led suit</strong>: the color you play up must differ from the led color. (Your card's second color always makes this possible.)</p>
     </section>
 
     <section>
       <h3>Winning the Trick</h3>
-      <p>The highest card of the <strong>led suit</strong> wins the trick. A follower who can't follow suit can play any card but cannot win. The trick winner leads the next trick. Once your hand is used up you draw a fresh one.</p>
+      <p>The <strong>higher value</strong> wins. On a tie, rock-paper-scissors breaks it (e.g. Red vs Blue → <strong>Blue</strong>, since Blue beats Red). The winner leads the next trick. When your hand runs out, you draw a fresh one.</p>
+    </section>
+
+    <section>
+      <h3>Placing the Die</h3>
+      <p>The <strong>loser</strong> drops a die of their own card's color and value where the two stacks' row and column cross — but only if that cell holds <em>no die of that color yet</em>. Each cell keeps at most one die per color, so stacks cap at <strong>height 3</strong>. If that color is already there, no die is placed. The loser <strong>scores</strong> the die they place.</p>
     </section>
 
     <section>
       <h3>Scoring</h3>
-      <p>Scores are calculated <em>per suit</em> across all stacks where you own the top die:</p>
-      <div class="formula">Pips × Height × Stacks</div>
-      <ul>
-        <li><strong>Pips</strong> — highest top-die value among your stacks in that suit</li>
-        <li><strong>Height</strong> — number of dice in your tallest stack of that suit</li>
-        <li><strong>Stacks</strong> — how many stacks you control in that suit</li>
-      </ul>
-      <p class="example">Example: two red stacks (heights 3 and 1) with top values 5 and 2 → Pips 5 × Height 3 × Stacks 2 = <strong>30 pts</strong>.</p>
+      <p>Two sources feed three color pools (R / G / B):</p>
+      <p><strong>Dice (during play)</strong> — the loser scores the die they place, in the die's color:</p>
+      <div class="formula">die value × stack height</div>
+      <p class="example">A 6 landing on the second level of a stack → 6 × 2 = <strong>12 pts</strong> in that color.</p>
+      <p><strong>Poker (at the end)</strong> — each of your 6 edge lanes is compared to the opposing stack as a 3-card hand (straight flush &gt; three of a kind &gt; straight &gt; flush &gt; pair &gt; high card; ties broken by RPS). Win a lane to score <strong>each card's value</strong> in its own color (e.g. 5♥ 3♥ 2♣ → +8 red, +2 green).</p>
+      <p>To win, compare pools <strong>color by color</strong> and take the <strong>majority — lead 2 of the 3 colors</strong>:</p>
+      <div class="formula">win = lead 2 of 3 colors</div>
+      <p>If neither player leads two colors, the tie goes to whoever has the larger <strong>second-highest</strong> color total. Spread your points — winning one color big but losing the other two loses the game.</p>
     </section>
 
     <section>
       <h3>Game End</h3>
-      <p>The game ends when every card stack is full (three cards each). The player with the higher total score wins.</p>
+      <p>The game ends when every card stack is full (three cards each). Whoever leads the majority — <strong>2 of the 3 colors</strong> — wins.</p>
     </section>
 
     <section>
       <h3>Strategic Tips</h3>
       <ul class="tips">
-        <li><strong>Hold your high cards of each suit.</strong> Only the led suit can win a trick, so a top card is your key to seizing the lead — and the lead is what lets you dictate which axis the next die lands on.</li>
-        <li><strong>Watch where the die falls.</strong> The follower's die always lands at the intersection of the two stacks. Plan which row and column you commit to so your dice build tall stacks in your own color rather than burying them under the opponent's.</li>
-        <li><strong>Losing a trick isn't always bad.</strong> Only the follower places a die, so deliberately following low can plant a die exactly where you want it while letting the opponent keep a lead they may not want.</li>
+        <li><strong>Losing a trick scores the points.</strong> The loser places the die and banks value × height, so deliberately losing — especially a high die onto a tall stack in a color you're short on — is often the right play.</li>
+        <li><strong>Fight for two colors.</strong> You win by leading 2 of the 3 colors, so contest the color matchups you can flip rather than running up a single color you already lead.</li>
+        <li><strong>Choose the color, not just the card.</strong> Both faces share a value, so orientation only decides which suit you commit — to the led suit, the die's color, and your poker hands.</li>
+        <li><strong>Watch the intersection.</strong> The die lands where the two stacks cross, and a color already sitting there blocks it (no die, no points) — handy for denying the opponent.</li>
       </ul>
     </section>
   </div>

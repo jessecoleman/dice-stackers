@@ -29,27 +29,14 @@
     blue:   '#3b82f6',
   };
 
-  // Darker variants for the small flipped rank, so it stays legible against the
-  // active face's colour.
-  const suitColorDark: Record<string, string> = {
-    red:    '#7a1414',
-    green:  '#134227',
-    yellow: '#5c3f0a',
-    blue:   '#152f63',
-  };
-
 </script>
 
-<!-- A corner label: the prominent rank, then the other face's rank smaller and
-     darker beneath, so both are readable in hand. -->
-{#snippet label(big: { suit: string; value: number }, small: { suit: string; value: number })}
+<!-- A corner label: the face's rank + suit symbol. Both faces share a rank now, so
+     there's no separate "other rank" shown. -->
+{#snippet label(face: { suit: string; value: number })}
   <span class="corner-line">
-    <span class="corner-value">{big.value}</span>
-    <span class="corner-symbol">{suitSymbol[big.suit]}</span>
-  </span>
-  <span class="corner-line flipped-line" style="color: {suitColorDark[small.suit]}">
-    <span class="flip-value">{small.value}</span>
-    <span class="flip-symbol">{suitSymbol[small.suit]}</span>
+    <span class="corner-value">{face.value}</span>
+    <span class="corner-symbol">{suitSymbol[face.suit]}</span>
   </span>
 {/snippet}
 
@@ -72,10 +59,10 @@
     <div class="spinner" style="transform: rotate({orientation === 1 ? 180 : 0}deg)">
       <div class="card-face">
         <div class="half up" style="background: {suitColor[card.faces[0].suit]}">
-          <span class="corner up-corner">{@render label(card.faces[0], card.faces[1])}</span>
+          <span class="corner up-corner">{@render label(card.faces[0])}</span>
         </div>
         <div class="half down" style="background: {suitColor[card.faces[1].suit]}">
-          <span class="corner down-corner">{@render label(card.faces[1], card.faces[0])}</span>
+          <span class="corner down-corner">{@render label(card.faces[1])}</span>
         </div>
       </div>
     </div>
@@ -147,7 +134,7 @@
     gap: 1px;
   }
 
-  /* Up corner stacks the active rank over the flipped rank */
+  /* Top-left end: the active face's label */
   .up-corner {
     top: 4px;
     left: 5px;
@@ -156,7 +143,7 @@
     gap: 1px;
   }
   /* Bottom-right end is the 180°-rotated face; its label is counter-rotated so it
-     reads upright after the card is spun. Stacks the same way as the up corner. */
+     reads upright after the card is spun. */
   .down-corner {
     bottom: 4px;
     right: 5px;
@@ -187,22 +174,6 @@
     color: rgba(255,255,255,0.88);
     line-height: 1;
     text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-  }
-
-  /* Flipped (down) rank shown smaller beneath the active rank, in a darkened
-     variant of its own colour with a light halo for contrast. */
-  .flip-value {
-    font-size: calc(var(--card-val-size, 19px) * 0.62);
-    font-weight: 700;
-    font-family: Georgia, serif;
-    line-height: 1;
-    text-shadow: 0 1px 2px rgba(255,255,255,0.35);
-  }
-
-  .flip-symbol {
-    font-size: calc(var(--card-sym-size, 16px) * 0.7);
-    line-height: 1;
-    text-shadow: 0 1px 2px rgba(255,255,255,0.35);
   }
 
   /* Back */

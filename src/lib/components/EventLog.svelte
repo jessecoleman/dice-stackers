@@ -46,6 +46,17 @@
   let modalListEl  = $state<HTMLUListElement | null>(null);
   let modalOpen    = $state(false);
 
+  // Group the flat log into tricks: a new trick begins at each 'led' entry, so
+  // each group is one led → followed → won sequence rendered as a single card.
+  const tricks = $derived.by(() => {
+    const groups: EventLogEntry[][] = [];
+    for (const e of gameStore.eventLog) {
+      if (e.action === 'led' || groups.length === 0) groups.push([]);
+      groups[groups.length - 1].push(e);
+    }
+    return groups;
+  });
+
   $effect(() => {
     gameStore.eventLog.length;
     if (listEl)      listEl.scrollTop      = listEl.scrollHeight;
@@ -63,37 +74,46 @@
 
 <svelte:window onkeydown={onKeyDown} />
 
+{#snippet entryRow(entry: EventLogEntry, interactive: boolean)}
+  {@const hasTarget = entry.action === 'led' || entry.action === 'followed'}
+  <li
+    class="log-entry"
+    class:p1={entry.player === 1}
+    class:p2={entry.player === 2}
+    class:highlightable={interactive && hasTarget}
+    onmouseenter={() => { if (interactive) hoverEntry(entry); }}
+    onmouseleave={() => { if (interactive) gameStore.setHoverHighlight(null); }}
+  >
+    <span class="timestamp">{timeAgo(entry.timestamp)}</span>
+    <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
+    <span class="action">{actionLabel(entry)}</span>
+    <span class="detail">
+      {#if entry.action === 'led' || entry.action === 'followed'}
+        <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
+      {:else if entry.action === 'won' && entry.dieColor}
+        <span class="on">die</span>
+        <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
+        <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
+      {/if}
+    </span>
+  </li>
+{/snippet}
+
 <!-- Desktop widget -->
 <div class="event-log desktop-only">
   <div class="log-title">Player Actions</div>
   <ul class="log-list" bind:this={listEl}>
-    {#each gameStore.eventLog as entry, i (i)}
-      {@const hasTarget = entry.action === 'led' || entry.action === 'followed'}
-      <li
-        class="log-entry"
-        class:p1={entry.player === 1}
-        class:p2={entry.player === 2}
-        class:highlightable={hasTarget}
-        onmouseenter={() => hoverEntry(entry)}
-        onmouseleave={() => gameStore.setHoverHighlight(null)}
-      >
-        <span class="timestamp">{timeAgo(entry.timestamp)}</span>
-        <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
-        <span class="action">{actionLabel(entry)}</span>
-        <span class="detail">
-          {#if entry.action === 'led' || entry.action === 'followed'}
-            <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
-          {:else if entry.action === 'won' && entry.dieColor}
-            <span class="on">die</span>
-            <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
-            <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
-          {/if}
-        </span>
+    {#each tricks as trick, ti (ti)}
+      <li class="trick-card">
+        <ul class="trick-entries">
+          {#each trick as entry, i (i)}
+            {@render entryRow(entry, true)}
+          {/each}
+        </ul>
       </li>
-    {/each}
-    {#if gameStore.eventLog.length === 0}
+    {:else}
       <li class="log-empty">No actions yet</li>
-    {/if}
+    {/each}
   </ul>
 </div>
 
@@ -114,29 +134,17 @@
         <button class="modal-close" onclick={() => modalOpen = false}>✕</button>
       </div>
       <ul class="log-list modal-list" bind:this={modalListEl}>
-        {#each gameStore.eventLog as entry, i (i)}
-          <li
-            class="log-entry"
-            class:p1={entry.player === 1}
-            class:p2={entry.player === 2}
-          >
-            <span class="timestamp">{timeAgo(entry.timestamp)}</span>
-            <span class="player-tag">{gameStore.playerName(entry.player)[0].toUpperCase()}</span>
-            <span class="action">{actionLabel(entry)}</span>
-            <span class="detail">
-              {#if entry.action === 'led' || entry.action === 'followed'}
-                <span style:color={suitColor(entry.cardSuit)}>{entry.cardValue} {SUIT_SYMBOLS[entry.cardSuit ?? '']}</span>
-              {:else if entry.action === 'won' && entry.dieColor}
-                <span class="on">die</span>
-                <span style:color={suitColor(entry.dieColor)}>{entry.dieValue}</span>
-                <span class="die-cube" style:background={SUIT_COLORS[entry.dieColor ?? '']}></span>
-              {/if}
-            </span>
+        {#each tricks as trick, ti (ti)}
+          <li class="trick-card">
+            <ul class="trick-entries">
+              {#each trick as entry, i (i)}
+                {@render entryRow(entry, false)}
+              {/each}
+            </ul>
           </li>
-        {/each}
-        {#if gameStore.eventLog.length === 0}
+        {:else}
           <li class="log-empty">No actions yet</li>
-        {/if}
+        {/each}
       </ul>
     </div>
   </div>
@@ -176,11 +184,27 @@
     scrollbar-color: rgba(255,255,255,0.1) transparent;
   }
 
+  /* Each trick (led → followed → won) is boxed as a single card. */
+  .trick-card {
+    list-style: none;
+    margin: 5px 6px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .trick-entries {
+    list-style: none;
+    margin: 0;
+    padding: 2px 0;
+  }
+
   .log-entry {
     display: flex;
     align-items: baseline;
     gap: 5px;
-    padding: 3px 10px;
+    padding: 3px 8px;
     font-size: 11px;
     line-height: 1.4;
     border-left: 2px solid transparent;

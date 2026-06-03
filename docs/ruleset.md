@@ -7,15 +7,16 @@ against the existing `src/lib/gameLogic.ts`, which already has the trick engine,
 
 ## STATUS: implemented (v1). Items below were resolved as noted; flag any you want changed.
 
-1. **Final aggregation.** Implemented as **`score = min(R, G, B)`** per player (both
-   die-difference points and poker points feed the same three colour pools).
+1. **Final aggregation.** Win by leading the **majority (≥2 of 3) colours**; ties
+   broken by the larger **second-highest** colour total (both die-placement points
+   and poker points feed the same three colour pools).
 2. **Deck size.** Implemented as **18 unique dual-sided combos × 2 copies = 36 cards**
-   (Skewed-Overlap mapping, `SKEW_PAIRS` in gameLogic.ts).
+   (3 colour pairings × 6 ranks; each card shows the **same rank on both colours**).
 3. **3-card poker ranking** — implemented per the draft table below (straight flush >
    trips > straight > flush > pair > high; RPS breaks suit ties on the high card).
    Ties with equal category+ranks+RPS score for neither player. Revisit if desired.
-4. **Deadlock** — FIXED via escape-valve placement (see Placement legality). Verified
-   500/500 games finish with random play.
+4. **Deadlock** — not possible: die placement never gates a lead/follow (a blocked
+   die is just skipped), so only card-slot room gates the game. Verified 1000/1000.
 
 Not yet runtime-playtested in the browser; engine verified via headless simulation.
 
@@ -24,76 +25,84 @@ Not yet runtime-playtested in the browser; engine verified via headless simulati
 - **Colors / suits:** Red, Green, Blue.
 - **RPS cycle:** **R ▸ G ▸ B ▸ R** (R beats G, G beats B, B beats R). No global
   strongest suit. Used for: trick tie-breaks AND poker suit tie-breaks.
-- **Cards:** dual-sided. Each card shows two (color, rank) faces from two different
-  colors. Orientation chosen at play time locks which face is "up" (active).
-  - 3 color pairings (R/G, G/B, B/R), 6 cards each = **18 unique combos**.
-  - In each pairing the RPS-winning color is the "strong" suit and skews high.
+- **Cards:** dual-sided. Each card shows two faces of the **same rank** in two
+  different colors. Orientation chosen at play time locks which face is "up" (active).
+  - 3 color pairings (R/G, G/B, B/R) × 6 ranks (1–6) = **18 unique combos**.
   - **Deck = 18 combos × 2 copies = 36 cards** (open item 2).
 - **Board:**
   - **Card slots:** 12 edge stacks, 6 per player, each up to 3 cards.
     `edgeFor`: P1 row→right / col→bottom; P2 row→left / col→top. These are the
     **poker hands**.
-  - **Die grid:** inner 3×3; each cell stacks dice (height 2 by game end — one per
-    round). This is the **running-score** layer.
+  - **Die grid:** inner 3×3; each cell stacks dice but holds **at most one die of
+    each colour** (R/G/B), so a cell caps at **height 3**. This is the
+    **running-score** layer.
 
 ## Counts (why 36 cards)
 
-- Grid = 9 cells × 2 layers = **18 dice** → **18 tricks** (1 die/trick).
+- 18 tricks total (≤1 die/trick: a die is placed only when the intersection cell
+  has no die of that colour yet), so **up to 18 dice** land on the 3×3 grid, each
+  cell capped at one die per colour (height ≤ 3).
 - 18 tricks × 2 cards = **36 card-plays**; 6 slots/player × 3 = 18 cards/player = 36.
-- Hand of 9 → **9 tricks/round** → **2 rounds** → 18 cards/player. Lazy refill to 9
-  once a hand is emptied (existing behavior).
-- End state: every card slot full (3 cards) AND every grid cell at height 2.
+- **2 hands of 9.** Each player is dealt 9, plays them out, then draws a second 9
+  (lazy refill once the hand empties). Each player plays one card per trick → 18
+  tricks total.
+- **Even-fill restriction:** stacks must fill evenly — every lane reaches height 1
+  before any reaches 2, and 2 before any reaches 3. So a lane is open only when its
+  height equals the current **fill layer** (0, 1, 2); each layer is 6 cards/player.
+  This is independent of the 9-card hands (the hand boundary falls mid-layer). After
+  3 layers every lane holds 3 cards.
+- End state: every card slot full (3 cards) — this alone ends the game.
+
+**No deadlock from the even-fill rule:** each trick spends one card from *each*
+player on *opposite* axes, so every trick adds exactly one row-play and one col-play
+across the two players. By parity a leader's only-open axis can never be one the
+follower has already exhausted mid-layer. Verified 1000/1000 random games finish with
+every lane at exactly 3.
 
 ## A trick
 
 1. **Leader** plays a card from hand into one of their own slots on a chosen axis
-   (row or col) **that has room**, choosing the face-up = **led suit + value**. (No
-   die placed by the leader.)
-2. **Follower** plays into one of *their own* slots on the **opposite axis**, at an
-   **un-filled grid intersection** (the cell where leader-line × follower-line
-   cross must have room for this round's layer). **Must-NOT-follow:** the
-   follower's up-face suit must **not** equal the led suit. (Always possible: dual
-   faces guarantee a non-led face exists.)
+   (row or col) that is **open under even-fill** (its height equals the current fill
+   layer), choosing the face-up = **led suit + value**. (No die placed by the leader.)
+2. **Follower** plays into one of *their own* slots on the **opposite axis** that is
+   open under even-fill. **Must-NOT-follow:** the follower's up-face suit must
+   **not** equal the led suit. (Always possible: dual faces guarantee a non-led face
+   exists.)
 3. **Winner** = higher up-face value; **ties broken by RPS** (e.g. tie R vs B → B).
-4. **Loser places the die** = their own up-face (color + value) into the
-   intersection cell, stacked on the current layer.
+4. **The LOSER places the die** = their own up-face (color + value) into the
+   intersection cell **iff that cell holds no die of this colour yet**, stacked on
+   top, and **scores `die value × new stack height`** in the die's color. If the cell
+   already holds that colour, **no die is placed and no points are scored** — the
+   trick still resolves normally.
 5. **Winner leads** the next trick.
 
-### Placement legality (the anti-deadlock rules)
+### Placement legality
 
-- **Round = which layer:** round 1 = first 9 dice (bottom layer, cells go empty→1),
-  round 2 = next 9 (top layer, cells go 1→2). Determined by total dice placed.
 - **Lead legality:** leader needs slot room AND the follower needs *some*
-  opposite-axis slot with room. Cell availability is NOT a lead requirement.
+  opposite-axis slot with room.
 - **Follow legality:** opposite axis, follower slot with room, must-NOT-follow suit.
-  Cell availability is NOT a follow requirement either.
-- **Die placement (escape valve):** the die normally lands at the row×col
-  **intersection** cell. If that cell is already full for the round, it **spills to
-  any cell with room** (engine picks deterministically: lowest row, then col).
-- **No unique-color-per-cell constraint** (removed — it reintroduced deadlock).
+- **Die placement:** the die lands at the row×col **intersection** cell only if that
+  cell has no die of its colour; otherwise the die is simply skipped. Die placement
+  is **never** a legality constraint on leading or following — the leader may freely
+  leave the follower with no legal die placement.
 
-**Why this is deadlock-free (verified):** the earlier design required the
-intersection cell to have room for a lead/follow to be legal. But card-slot
-capacity (3) and grid-cell capacity (2) desync — a leader could have an open slot
-whose every reachable intersection cell was full → "no legal lead." Simulation:
-random play deadlocked ~42% of games; even greedy deadlock-avoidance still failed
-~50%, proving it was structural, not tactical. Dropping the cell requirement from
-lead/follow legality and adding the spill-to-any-open-cell escape valve fixed it
-completely: **500/500 random games finish, 0 deadlocks** (re-verified against the
-real engine, not just a model). Over-stacking remains impossible (height cap
-enforced at the cell); the escape valve guarantees no homeless die.
+**No deadlock:** the card slots (capacity 3 each) are the only finite resource and
+the sole end condition. A lead/follow is gated only by slot room + the must-NOT-follow
+suit (never by the grid), so a player can always move while they hold cards. The game
+ends exactly when all card slots fill (36 cards / 18 tricks). Verified deadlock-free:
+1000/1000 random games finish, max cell height 3.
 
 ## Scoring
 
 Both scoring sources feed three per-player pools: **R, G, B.**
 
-### 1. Die-difference (running, round 2 only)
-When a cell is **capped** in round 2, the **trick winner** scores:
-- if the two dice in the cell are **different colors**: `|v_top − v_bottom|` points
-  in the **third (omitted) color** (the color neither die is).
-- if the two dice are the **same color**: **0 points**.
-
-(Round 1 placements score nothing; they set up round 2.)
+### 1. Die placement (running)
+The die is the **loser's up-face** (color + value); it lands at the row×col
+intersection, but a cell holds **at most one die per colour** (so it caps at height
+3). The **loser** (who places it) scores **`die value × stack height`** (height
+1-indexed) in the **die's color**. Example: a 6 placed onto a stack so it sits on the
+second level scores `6 × 2 = 12`. If the intersection cell already holds the die's
+colour, **no die is placed and no points are scored** that trick.
 
 ### 2. Poker hands (end of game)
 After all dice are placed, compare each player's card slot against the **opposing**
@@ -102,12 +111,15 @@ slot across the board — 6 comparisons total:
 - 3 col-pairs: P1 `bottom-j` vs P2 `top-j` (same col index).
 
 Each comparison is a 3-card poker hand vs. the opposing 3-card hand. The **winner of
-the comparison** scores **+1 point per card, in that card's color** (e.g. winning a
-hand of R, R, G → +2 R, +1 G). Loser of the comparison scores nothing from it.
+the comparison** scores, for **each card, its face value in that card's color** (e.g.
+winning a hand of R5, R3, G2 → +8 R, +2 G). Loser of the comparison scores nothing.
 
 ### Final
-`score = min(R, G, B)` per player; higher wins (open item 1). Diversification is
-forced: neglect any color and it caps your whole score.
+Compare the two players' pools **per color**. Whoever has more points in a color
+**leads** that color; the player leading the **majority (≥2 of 3)** colors **wins**.
+If neither leads two (each leads one, or colors tie), break the tie by the larger
+**second-highest** color total; if those are equal too, it's a **draw**. Winning a
+single color outright matters less than spreading enough to lead two.
 
 ## 3-card poker ranking (DRAFT — open item 3)
 
@@ -126,10 +138,9 @@ color(s). Need to nail down: Ace/1 low only (ranks are 1–6 here, so straights 
 plain consecutive); exact tiebreak chain per category; whether equal hands split or
 both score nothing.
 
-## Mapping (rank distribution within a pairing) — still TBD
+## Mapping (rank distribution within a pairing) — RESOLVED
 
-Two candidates from ideation (shown R/G, strong=R; mirror for G/B, B/R):
-- **Clean Tiers:** R6/G1 R6/G2 R5/G1 R5/G3 R4/G2 R4/G3 (strong always 4–6, weak 1–3).
-- **Skewed-Overlap:** R6/G4 R6/G2 R5/G3 R5/G1 R4/G2 R3/G1 (skewed but overlapping).
-
-Pick one and pressure-test the coax before locking.
+Both faces of a card share one rank. For each pairing there is one card per rank
+1–6 (e.g. R/G: R1·G1, R2·G2, … R6·G6), ×2 copies. No skew — the only difference
+between a card's two faces is colour, so orientation is purely a colour choice
+(which suit you lead/place and which colour goes into the poker slot).
