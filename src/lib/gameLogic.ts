@@ -119,9 +119,20 @@ export type Action =
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const HAND_SIZE = 9;            // 2 hands of 9 dealt over the game (18 cards/player)
-const LANES_PER_PLAYER = 6;     // 3 row stacks + 3 col stacks; also the even-fill layer size
 const ALL_EDGES: Edge[] = ['top', 'bottom', 'left', 'right'];
 const LINES = [0, 1, 2] as const;
+
+/**
+ * Even-fill slack: how far a lane may rise above the player's *shortest* lane.
+ *   0 = strict even-fill (fill every lane to N before any reaches N+1)
+ *   1 = a lane may be up to 1 ahead of the shortest
+ *   2 = up to 2 ahead
+ *   3 = free (no even-fill; any lane with room)
+ * Tunable knob for balancing tempo/planning vs front-loading (see docs/balance-analysis.md).
+ */
+let evenFillSlack = 0;
+export function setEvenFillSlack(n: number): void { evenFillSlack = n; }
+export function getEvenFillSlack(): number { return evenFillSlack; }
 
 export function slotKey(edge: Edge, index: 0 | 1 | 2): string {
   return `${edge}-${index}`;
@@ -185,23 +196,26 @@ export function gameWinner(p1: ColorPoints, p2: ColorPoints): 1 | 2 | null {
   return null;
 }
 
-// Deck: 3 colour pairings × 6 ranks × 2 copies = 36 cards (18 unique combos).
-// Each card shows the SAME rank on both of its two colours.
-const RANKS = [1, 2, 3, 4, 5, 6] as const;
-const PAIRINGS: [Suit, Suit][] = [
-  ['red', 'green'],   // R ▸ G
-  ['green', 'blue'],  // G ▸ B
-  ['blue', 'red'],    // B ▸ R
+// Deck: 3 colour pairings × 3 split values × 4 copies = 36 cards (9 unique combos).
+// Each card splits a high "strong" face against a low "weak" face (the two sum to 7),
+// cycling so high reds sit opposite low blues, high blues opposite low greens, and
+// high greens opposite low reds.
+const SKEW_PAIRS: [number, number][] = [[6, 1], [5, 2], [4, 3]];  // [strong, weak]
+const PAIRINGS: { strong: Suit; weak: Suit }[] = [
+  { strong: 'red',   weak: 'blue'  },  // high R ↔ low B
+  { strong: 'blue',  weak: 'green' },  // high B ↔ low G
+  { strong: 'green', weak: 'red'   },  // high G ↔ low R
 ];
+const COPIES = ['a', 'b', 'c', 'd'] as const;  // 4 copies → 36 cards
 
 function buildDeck(): Card[] {
   const cards: Card[] = [];
-  for (const [c1, c2] of PAIRINGS) {
-    for (const value of RANKS) {
-      for (const copy of ['a', 'b'] as const) {
+  for (const { strong, weak } of PAIRINGS) {
+    for (const [sv, wv] of SKEW_PAIRS) {
+      for (const copy of COPIES) {
         cards.push({
-          id: `${c1}${value}-${c2}${value}-${copy}`,
-          faces: [{ suit: c1, value }, { suit: c2, value }],
+          id: `${strong}${sv}-${weak}${wv}-${copy}`,
+          faces: [{ suit: strong, value: sv }, { suit: weak, value: wv }],
         });
       }
     }
@@ -265,25 +279,26 @@ function poolOf(state: GameState, player: 1 | 2): ColorPoints {
   return player === 1 ? state.player1Score : state.player2Score;
 }
 
-/** Total cards a player has committed across their six lanes this game. */
-function cardsPlayedBy(state: GameState, player: 1 | 2): number {
-  let n = 0;
+/** The height of a player's shortest lane (0–3). */
+function minStackHeight(state: GameState, player: 1 | 2): number {
+  let m = 3;
   for (const axis of ['row', 'col'] as Axis[])
-    for (const line of LINES)
-      n += (state.cardSlots[slotKey(edgeFor(player, axis), line)] ?? []).length;
-  return n;
+    for (const line of LINES) {
+      const len = (state.cardSlots[slotKey(edgeFor(player, axis), line)] ?? []).length;
+      if (len < m) m = len;
+    }
+  return m;
 }
 
 /**
- * Whether a player may play into (axis, line) right now. Stacks must fill **evenly**:
- * every lane reaches height 1 before any reaches 2, and 2 before any reaches 3. So a
- * lane is open only when its height equals the current fill layer (0, 1, 2). This is
- * independent of the 9-card hands — it's driven purely by the board.
+ * Whether a player may play into (axis, line) right now. Lanes fill toward height 3
+ * under the **even-fill** rule: a lane is open only while its height stays within
+ * `evenFillSlack` of the player's shortest lane. Slack 0 = strict layer-by-layer
+ * fill; slack 3 = unconstrained. Driven purely by the board (independent of hands).
  */
 export function stackHasRoom(state: GameState, player: 1 | 2, axis: Axis, line: 0 | 1 | 2): boolean {
   const stack = state.cardSlots[slotKey(edgeFor(player, axis), line)] ?? [];
-  const layer = Math.floor(cardsPlayedBy(state, player) / LANES_PER_PLAYER);  // 0, 1, 2
-  return stack.length < 3 && stack.length === layer;
+  return stack.length < 3 && stack.length <= minStackHeight(state, player) + evenFillSlack;
 }
 
 /** The grid cell where a follow into `followLine` lands: intersection of the row- and col-lines. */

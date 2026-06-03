@@ -1,8 +1,12 @@
 // ── Heuristic AI ────────────────────────────────────────────────────────────
 //
-// A 1-ply greedy bot for seat 2. Because `applyAction` is a pure reducer that
-// returns the next state, "search" is just: enumerate every legal move, apply
-// it, score the resulting state, keep the best. No separate game model needed.
+// A 1-ply greedy bot. Because `applyAction` is a pure reducer that returns the
+// next state, "search" is just: enumerate every legal move, apply it, score the
+// resulting state, keep the best. No separate game model needed.
+//
+// The evaluation is a weighted sum of features; swapping the `Weights` lets the
+// same engine play very different strategies (see `STRATEGIES`), which is what the
+// tournament harness in scripts/ai-sim.ts compares.
 //
 // `driveAI` is the server-side entry point: given a state whose turn belongs to
 // the AI, it plays moves (following, then leading if it wins the trick) until
@@ -36,17 +40,42 @@ const AXES: Axis[] = ['row', 'col'];
 const LINES = [0, 1, 2] as const;
 
 /**
- * Evaluation weights — the knobs to tune. The objective is to lead the majority of
- * colours, so `colorLead` (colours currently led) dominates, with `margin` as a
- * gentle per-colour point gradient. Poker terms are smaller (they resolve at end).
+ * Feature weights for the evaluation. Each term is a heuristic the bot can care
+ * about more or less:
+ *  - `colorLead`      — colours currently led (the win condition: lead 2 of 3).
+ *  - `margin`         — raw per-colour point margin (dice points), a gentle gradient.
+ *  - `pokerRealized`  — fully-formed lane triplets currently won vs the opponent.
+ *  - `buildPotential` — own lanes shaping toward strong triplets vs the opponent's.
  */
-const W = {
-  win: 100_000,       // terminal: dominate everything by the actual win/loss/draw
-  colorLead: 8.0,     // each colour you currently lead (lead 2 of 3 to win)
-  margin: 0.1,        // per-colour point-margin gradient
-  pokerRealized: 4.0, // each fully-formed slot matchup currently won/lost
-  buildPotential: 0.5,// nudges its own slots toward pairs/flushes/straights
-};
+export interface Weights {
+  colorLead: number;
+  margin: number;
+  pokerRealized: number;
+  buildPotential: number;
+}
+
+/** Named strategies to pit against each other in simulation. */
+export const STRATEGIES = {
+  // Greedy on the running colour pools (dice points → colour majority); ignores triplets.
+  dice:       { colorLead: 8, margin: 0.15, pokerRealized: 0, buildPotential: 0 },
+  // Focuses entirely on the 3-card lane triplets; ignores the dice/colour race.
+  triplet:    { colorLead: 0, margin: 0,    pokerRealized: 6, buildPotential: 1.5 },
+  // Even blend of both.
+  balanced:   { colorLead: 6, margin: 0.1,  pokerRealized: 4, buildPotential: 0.8 },
+  // Blend leaning toward dice/colour.
+  diceHeavy:  { colorLead: 8, margin: 0.12, pokerRealized: 2, buildPotential: 0.4 },
+  // Blend leaning toward triplets.
+  pokerHeavy: { colorLead: 3, margin: 0.05, pokerRealized: 6, buildPotential: 1.2 },
+} satisfies Record<string, Weights>;
+
+export type StrategyName = keyof typeof STRATEGIES;
+
+/** The strategy the live (server-driven) opponent uses — strongest in simulation
+ *  (diceHeavy: 62.6% vs the field over 10k games, beats every other profile H2H). */
+export const DEFAULT_WEIGHTS: Weights = STRATEGIES.diceHeavy;
+
+/** Terminal dominance — fixed across strategies so every bot still plays to win. */
+const WIN = 100_000;
 
 // ── Move enumeration ──────────────────────────────────────────────────────────
 
@@ -92,12 +121,17 @@ function poolsFor(state: GameState, me: 1 | 2): { mine: ColorPoints; opp: ColorP
     : { mine: state.player2Score, opp: state.player1Score };
 }
 
-/** How favourable the colour pools are for the bot: colours led, plus a small margin. */
-function colorAdvantage(mine: ColorPoints, opp: ColorPoints): number {
-  const cw = colorWins(mine, opp);          // cw.p1 = colours `mine` leads, cw.p2 = `opp` leads
-  let margin = 0;
-  for (const s of suits) margin += mine[s] - opp[s];
-  return W.colorLead * (cw.p1 - cw.p2) + W.margin * margin;
+/** Net colours led (mine − opp), range −3..3. */
+function colorLeadFeature(mine: ColorPoints, opp: ColorPoints): number {
+  const cw = colorWins(mine, opp);   // cw.p1 = colours `mine` leads, cw.p2 = `opp` leads
+  return cw.p1 - cw.p2;
+}
+
+/** Net per-colour point margin (mine − opp) summed across colours. */
+function marginFeature(mine: ColorPoints, opp: ColorPoints): number {
+  let m = 0;
+  for (const s of suits) m += mine[s] - opp[s];
+  return m;
 }
 
 function facesAt(state: GameState, edge: Edge, index: 0 | 1 | 2): Face[] {
@@ -126,11 +160,10 @@ function pokerRealizedMargin(state: GameState, me: 1 | 2): number {
   return margin;
 }
 
-/** Reward the bot's own partial slots that are shaping into strong hands. */
-function buildMargin(state: GameState, me: 1 | 2): number {
-  const myEdges: Edge[] = me === 1 ? ['right', 'bottom'] : ['left', 'top'];
+/** Sum of partial-hand strength (category) across a player's two edges. */
+function buildPotentialOf(state: GameState, edges: Edge[]): number {
   let pot = 0;
-  for (const edge of myEdges) {
+  for (const edge of edges) {
     for (const i of LINES) {
       const faces = facesAt(state, edge, i);
       if (faces.length >= 2) pot += evaluateHand(faces).cat; // 0 high … 5 straight-flush
@@ -139,33 +172,41 @@ function buildMargin(state: GameState, me: 1 | 2): number {
   return pot;
 }
 
-/** Score a state from `me`'s perspective; higher is better. */
-export function evalState(state: GameState, me: 1 | 2): number {
+/** How much better the bot's lanes are shaping into strong triplets than the opponent's. */
+function buildFeature(state: GameState, me: 1 | 2): number {
+  const mine: Edge[]  = me === 1 ? ['right', 'bottom'] : ['left', 'top'];
+  const opp:  Edge[]  = me === 1 ? ['left', 'top'] : ['right', 'bottom'];
+  return buildPotentialOf(state, mine) - buildPotentialOf(state, opp);
+}
+
+/** Score a state from `me`'s perspective under `w`; higher is better. */
+export function evalState(state: GameState, me: 1 | 2, w: Weights = DEFAULT_WEIGHTS): number {
   const { mine, opp } = poolsFor(state, me);
 
   if (state.phase === 'game-over') {
-    // Pools include poker points — settle by the actual win condition, with the
-    // colour advantage as a fine tiebreak among equally-won/lost lines.
-    const w = gameWinner(state.player1Score, state.player2Score);
-    const sign = w === null ? 0 : w === me ? 1 : -1;
-    return W.win * sign + colorAdvantage(mine, opp);
+    // Pools include poker points — settle by the actual win condition (all strategies
+    // play to win), with the point margin as a fine tiebreak among equal outcomes.
+    const winner = gameWinner(state.player1Score, state.player2Score);
+    const sign = winner === null ? 0 : winner === me ? 1 : -1;
+    return WIN * sign + 0.01 * marginFeature(mine, opp);
   }
 
-  return colorAdvantage(mine, opp)
-    + W.pokerRealized * pokerRealizedMargin(state, me)
-    + W.buildPotential * buildMargin(state, me);
+  return w.colorLead      * colorLeadFeature(mine, opp)
+    +    w.margin         * marginFeature(mine, opp)
+    +    w.pokerRealized  * pokerRealizedMargin(state, me)
+    +    w.buildPotential * buildFeature(state, me);
 }
 
 // ── Move choice ───────────────────────────────────────────────────────────────
 
-/** The best legal move for `player`, or null if none exists. */
-export function chooseMove(state: GameState, player: 1 | 2): Action | null {
+/** The best legal move for `player` under `w`, or null if none exists. */
+export function chooseMove(state: GameState, player: 1 | 2, w: Weights = DEFAULT_WEIGHTS): Action | null {
   let best: Action | null = null;
   let bestScore = -Infinity;
   for (const move of legalMoves(state, player)) {
     const res = applyAction(state, player, move);
     if (res.error) continue;
-    const score = evalState(res.state, player);
+    const score = evalState(res.state, player, w);
     if (score > bestScore) {
       bestScore = score;
       best = move;
@@ -186,9 +227,9 @@ export function aiToMove(state: GameState): boolean {
  * not the AI's turn). The client calls this once per tick so each move can be
  * paced/animated; `driveAI` below resolves a whole turn at once for headless use.
  */
-export function stepAI(state: GameState): GameState {
+export function stepAI(state: GameState, w: Weights = DEFAULT_WEIGHTS): GameState {
   if (!aiToMove(state)) return state;
-  const move = chooseMove(state, AI_SEAT);
+  const move = chooseMove(state, AI_SEAT, w);
   if (!move) return state;
   const res = applyAction(state, AI_SEAT, move);
   return res.error ? state : res.state;
@@ -199,11 +240,11 @@ export function stepAI(state: GameState): GameState {
  * then keep leading whenever it wins. The guard bounds the loop well above the 36
  * total plays in a game.
  */
-export function driveAI(state: GameState): GameState {
+export function driveAI(state: GameState, w: Weights = DEFAULT_WEIGHTS): GameState {
   let s = state;
   let guard = 0;
   while (aiToMove(s) && guard++ < 100) {
-    const next = stepAI(s);
+    const next = stepAI(s, w);
     if (next === s) break;
     s = next;
   }

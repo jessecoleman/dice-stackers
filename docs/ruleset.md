@@ -10,8 +10,8 @@ against the existing `src/lib/gameLogic.ts`, which already has the trick engine,
 1. **Final aggregation.** Win by leading the **majority (≥2 of 3) colours**; ties
    broken by the larger **second-highest** colour total (both die-placement points
    and poker points feed the same three colour pools).
-2. **Deck size.** Implemented as **18 unique dual-sided combos × 2 copies = 36 cards**
-   (3 colour pairings × 6 ranks; each card shows the **same rank on both colours**).
+2. **Deck size.** Implemented as **9 unique dual-sided combos × 4 copies = 36 cards**
+   (3 colour pairings × 3 split values; each card pits a high face against a low face).
 3. **3-card poker ranking** — implemented per the draft table below (straight flush >
    trips > straight > flush > pair > high; RPS breaks suit ties on the high card).
    Ties with equal category+ranks+RPS score for neither player. Revisit if desired.
@@ -25,10 +25,11 @@ Not yet runtime-playtested in the browser; engine verified via headless simulati
 - **Colors / suits:** Red, Green, Blue.
 - **RPS cycle:** **R ▸ G ▸ B ▸ R** (R beats G, G beats B, B beats R). No global
   strongest suit. Used for: trick tie-breaks AND poker suit tie-breaks.
-- **Cards:** dual-sided. Each card shows two faces of the **same rank** in two
-  different colors. Orientation chosen at play time locks which face is "up" (active).
-  - 3 color pairings (R/G, G/B, B/R) × 6 ranks (1–6) = **18 unique combos**.
-  - **Deck = 18 combos × 2 copies = 36 cards** (open item 2).
+- **Cards:** dual-sided, with a **split** value: a high "strong" face vs a low
+  "weak" face (the two values sum to 7). Orientation locks which face is "up" (active).
+  - 3 color pairings, cycling **high ↔ low**: high R / low B, high B / low G, high
+    G / low R. Each pairing has 3 cards: `6/1, 5/2, 4/3` → **9 unique combos**.
+  - **Deck = 9 combos × 4 copies = 36 cards.**
 - **Board:**
   - **Card slots:** 12 edge stacks, 6 per player, each up to 3 cards.
     `edgeFor`: P1 row→right / col→bottom; P2 row→left / col→top. These are the
@@ -140,7 +141,12 @@ both score nothing.
 
 ## Mapping (rank distribution within a pairing) — RESOLVED
 
-Both faces of a card share one rank. For each pairing there is one card per rank
-1–6 (e.g. R/G: R1·G1, R2·G2, … R6·G6), ×2 copies. No skew — the only difference
-between a card's two faces is colour, so orientation is purely a colour choice
-(which suit you lead/place and which colour goes into the poker slot).
+Split values, cycling high ↔ low across the three colours:
+
+- **high R / low B:** R6·B1, R5·B2, R4·B3
+- **high B / low G:** B6·G1, B5·G2, B4·G3
+- **high G / low R:** G6·R1, G5·R2, G4·R3
+
+The strong/weak values always sum to 7. Each of these 9 combos appears ×4 → 36
+cards. Orientation chooses which side is active, trading a high value in one colour
+for a low value in another.

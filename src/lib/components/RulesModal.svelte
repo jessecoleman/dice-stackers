@@ -26,7 +26,7 @@
     <section>
       <h3>Colors &amp; Cards</h3>
       <p>Three suits — <strong>Red</strong>, <strong>Green</strong>, <strong>Blue</strong> — form a rock-paper-scissors cycle: <strong>Red beats Green, Green beats Blue, Blue beats Red</strong>. No color is strongest overall.</p>
-      <p>Every card is <strong>dual-sided</strong>: two colors sharing the <em>same number</em>. When you play a card you choose which color is face-up — that picks the suit, never the value.</p>
+      <p>Every card is <strong>dual-sided</strong> with a <strong>split</strong> value: a high face in one color against a low face in another (the two add to 7), cycling so high red sits opposite low blue, high blue opposite low green, and high green opposite low red. When you play a card you choose which face is up — picking both its suit <em>and</em> its value.</p>
     </section>
 
     <section>
@@ -86,7 +86,7 @@
       <ul class="tips">
         <li><strong>Losing a trick scores the points.</strong> The loser places the die and banks value × height, so deliberately losing — especially a high die onto a tall stack in a color you're short on — is often the right play.</li>
         <li><strong>Fight for two colors.</strong> You win by leading 2 of the 3 colors, so contest the color matchups you can flip rather than running up a single color you already lead.</li>
-        <li><strong>Choose the color, not just the card.</strong> Both faces share a value, so orientation only decides which suit you commit — to the led suit, the die's color, and your poker hands.</li>
+        <li><strong>Each face is a trade-off.</strong> A card's two faces split a high value in one color against a low value in another — orientation picks both the suit and the value you commit, for the trick, the die's color, and your poker hands.</li>
         <li><strong>Watch the intersection.</strong> The die lands where the two stacks cross, and a color already sitting there blocks it (no die, no points) — handy for denying the opponent.</li>
       </ul>
     </section>
