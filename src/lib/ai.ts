@@ -25,7 +25,6 @@ import {
   slotKey,
   type GameState,
   type Action,
-  type Orientation,
   type Axis,
   type Edge,
   type Face,
@@ -35,7 +34,6 @@ import {
 /** The seat the AI controls. */
 export const AI_SEAT: 1 | 2 = 2;
 
-const ORIENTATIONS: Orientation[] = [0, 1];
 const AXES: Axis[] = ['row', 'col'];
 const LINES = [0, 1, 2] as const;
 
@@ -44,28 +42,29 @@ const LINES = [0, 1, 2] as const;
  * about more or less:
  *  - `colorLead`      — colours currently led (the win condition: lead 2 of 3).
  *  - `margin`         — raw per-colour point margin (dice points), a gentle gradient.
- *  - `pokerRealized`  — fully-formed lane triplets currently won vs the opponent.
- *  - `buildPotential` — own lanes shaping toward strong triplets vs the opponent's.
+ *  - `pokerRealized`  — expected card-stacks (poker lanes) won vs the opponent.
+ *  - `buildPotential` — expected card-stack points (win-probability × hand value).
+ *  - `dualFocus`      — margin in your best TWO colours, ignoring the third (commit to
+ *                       two colours, concede one — directly targets "lead 2 of 3").
  */
 export interface Weights {
   colorLead: number;
   margin: number;
   pokerRealized: number;
   buildPotential: number;
+  dualFocus?: number;
 }
 
 /** Named strategies to pit against each other in simulation. */
 export const STRATEGIES = {
-  // Greedy on the running colour pools (dice points → colour majority); ignores triplets.
-  dice:       { colorLead: 8, margin: 0.15, pokerRealized: 0, buildPotential: 0 },
-  // Focuses entirely on the 3-card lane triplets; ignores the dice/colour race.
-  triplet:    { colorLead: 0, margin: 0,    pokerRealized: 6, buildPotential: 1.5 },
-  // Even blend of both.
+  // Even blend of dice and triplets.
   balanced:   { colorLead: 6, margin: 0.1,  pokerRealized: 4, buildPotential: 0.8 },
   // Blend leaning toward dice/colour.
   diceHeavy:  { colorLead: 8, margin: 0.12, pokerRealized: 2, buildPotential: 0.4 },
   // Blend leaning toward triplets.
   pokerHeavy: { colorLead: 3, margin: 0.05, pokerRealized: 6, buildPotential: 1.2 },
+  // Commit to two colours and concede the third (rather than spread across all three).
+  dualColor:  { colorLead: 0, margin: 0,    pokerRealized: 3, buildPotential: 0.5, dualFocus: 0.5 },
 } satisfies Record<string, Weights>;
 
 export type StrategyName = keyof typeof STRATEGIES;
@@ -85,27 +84,23 @@ export function legalMoves(state: GameState, player: 1 | 2): Action[] {
   const moves: Action[] = [];
 
   if (!state.trick) {
-    // Leading: legality is structural (slot room only), independent of the card, but
-    // the card+orientation decide the led suit/value, so cross them all.
+    // Leading: legality is structural (slot room). The axis sets the shade/value, so
+    // each open (axis, line) crossed with each card is a distinct lead.
     for (const axis of AXES) {
       for (const line of LINES) {
         if (!isValidLead(state, axis, line)) continue;
         for (const card of hand) {
-          for (const orientation of ORIENTATIONS) {
-            moves.push({ type: 'PLAY_CARD', card, orientation, axis, line });
-          }
+          moves.push({ type: 'PLAY_CARD', card, axis, line });
         }
       }
     }
   } else {
-    // Following: axis is fixed (opposite the lead); filter by the full follow rule.
+    // Following: axis is fixed (opposite the lead); any card into an open line.
     const followAxis: Axis = state.trick.axis === 'row' ? 'col' : 'row';
     for (const line of LINES) {
+      if (!isValidFollow(state, followAxis, line)) continue;
       for (const card of hand) {
-        for (const orientation of ORIENTATIONS) {
-          if (!isValidFollow(state, card, orientation, followAxis, line)) continue;
-          moves.push({ type: 'PLAY_CARD', card, orientation, axis: followAxis, line });
-        }
+        moves.push({ type: 'PLAY_CARD', card, axis: followAxis, line });
       }
     }
   }
@@ -134,49 +129,80 @@ function marginFeature(mine: ColorPoints, opp: ColorPoints): number {
   return m;
 }
 
+/** Margin in the best TWO colours (ignores the worst) — rewards committing to two. */
+function dualFocusFeature(mine: ColorPoints, opp: ColorPoints): number {
+  const margins = suits.map(s => mine[s] - opp[s]).sort((a, b) => b - a);
+  return margins[0] + margins[1];
+}
+
 function facesAt(state: GameState, edge: Edge, index: 0 | 1 | 2): Face[] {
   return (state.cardSlots[slotKey(edge, index)] ?? []).map(upFace);
 }
 
-// The 6 opposing slot matchups: P1 edge vs P2 edge, by shared line index.
-const SLOT_PAIRS: { p1: Edge; p2: Edge }[] = [
-  { p1: 'right', p2: 'left' },   // row pairs
-  { p1: 'bottom', p2: 'top' },   // col pairs
+// ── Card-stack (poker lane) estimation ────────────────────────────────────────
+// The 6 end-game lane matchups: a player's edge stack vs the opposing edge stack,
+// by shared line index. Both stacks in a pair are the same shade — row pairs hold
+// the dark (high) face values, col pairs the light (low) ones.
+const POKER_PAIRS: { p1: Edge; p2: Edge; dark: boolean }[] = [
+  { p1: 'right', p2: 'left', dark: true },   // row pairs → dark/high values
+  { p1: 'bottom', p2: 'top', dark: false },  // col pairs → light/low values
 ];
 
-/** +1 per fully-formed slot matchup the bot currently wins, −1 per loss. */
-function pokerRealizedMargin(state: GameState, me: 1 | 2): number {
-  let margin = 0;
-  for (const { p1, p2 } of SLOT_PAIRS) {
-    for (const i of LINES) {
-      const f1 = facesAt(state, p1, i);
-      const f2 = facesAt(state, p2, i);
-      if (f1.length < 3 || f2.length < 3) continue; // only realized matchups
-      const cmp = compareHands(evaluateHand(f1), evaluateHand(f2)); // >0 favours P1
-      const favoursMe = me === 1 ? cmp : -cmp;
-      margin += Math.sign(favoursMe);
-    }
-  }
-  return margin;
+// Mean face value a lane still draws (deck: dark ≈ 4.0, light ≈ 3.0).
+const DARK_MEAN = 4.0;
+const LIGHT_MEAN = 3.0;
+
+/** Heuristic strength of a (partial or full) lane hand — higher = more likely to win. */
+function handPotential(faces: Face[]): number {
+  if (faces.length === 0) return 0;
+  const values = faces.map(f => f.value);
+  let q = values.reduce((a, b) => a + b, 0);                 // high cards: value + high-card wins
+  if (faces.every(f => f.suit === faces[0].suit)) q += 4 * faces.length;  // flush building
+  const counts = new Map<number, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  const maxRep = Math.max(...counts.values());
+  if (maxRep >= 2) q += 6 * (maxRep - 1);                    // pair +6, trips +12
+  const distinct = [...new Set(values)].sort((a, b) => a - b);
+  if (distinct.length === values.length && distinct.length >= 2 &&
+      distinct[distinct.length - 1] - distinct[0] <= 2) q += 3 * faces.length;  // straight building
+  return q;
 }
 
-/** Sum of partial-hand strength (category) across a player's two edges. */
-function buildPotentialOf(state: GameState, edges: Edge[]): number {
-  let pot = 0;
-  for (const edge of edges) {
-    for (const i of LINES) {
-      const faces = facesAt(state, edge, i);
-      if (faces.length >= 2) pot += evaluateHand(faces).cat; // 0 high … 5 straight-flush
-    }
+/** P(a lane filled from `myFaces` beats one filled from `oppFaces`) at game end. */
+function laneWinProb(myFaces: Face[], oppFaces: Face[]): number {
+  if (myFaces.length === 3 && oppFaces.length === 3) {
+    const cmp = compareHands(evaluateHand(myFaces), evaluateHand(oppFaces));
+    return cmp > 0 ? 1 : 0;                                  // exact tie scores for neither
   }
-  return pot;
+  // Partial: logistic on the strength gap, flattened toward 50/50 by unknown cards.
+  const unknown = (3 - myFaces.length) + (3 - oppFaces.length);
+  const k = 0.12 / (1 + 0.4 * unknown);
+  return 1 / (1 + Math.exp(-k * (handPotential(myFaces) - handPotential(oppFaces))));
 }
 
-/** How much better the bot's lanes are shaping into strong triplets than the opponent's. */
-function buildFeature(state: GameState, me: 1 | 2): number {
-  const mine: Edge[]  = me === 1 ? ['right', 'bottom'] : ['left', 'top'];
-  const opp:  Edge[]  = me === 1 ? ['left', 'top'] : ['right', 'bottom'];
-  return buildPotentialOf(state, mine) - buildPotentialOf(state, opp);
+/** Expected final point value of a lane: current card values + expected remaining draws. */
+function laneExpectedValue(faces: Face[], dark: boolean): number {
+  const cur = faces.reduce((a, f) => a + f.value, 0);
+  return cur + (3 - faces.length) * (dark ? DARK_MEAN : LIGHT_MEAN);
+}
+
+/**
+ * Estimate the bot's card-stack advantage across the 6 lanes:
+ *   winMargin  = Σ (P(me win) − P(opp win))            — expected lanes won
+ *   pointMargin = Σ (P(me)·EV(me) − P(opp)·EV(opp))     — expected poker points
+ */
+function pokerEstimate(state: GameState, me: 1 | 2): { winMargin: number; pointMargin: number } {
+  let winMargin = 0, pointMargin = 0;
+  for (const { p1, p2, dark } of POKER_PAIRS) {
+    for (const i of LINES) {
+      const f1 = facesAt(state, p1, i), f2 = facesAt(state, p2, i);
+      const mine = me === 1 ? f1 : f2, opp = me === 1 ? f2 : f1;
+      const pMe = laneWinProb(mine, opp), pOpp = laneWinProb(opp, mine);
+      winMargin += pMe - pOpp;
+      pointMargin += pMe * laneExpectedValue(mine, dark) - pOpp * laneExpectedValue(opp, dark);
+    }
+  }
+  return { winMargin, pointMargin };
 }
 
 /** Score a state from `me`'s perspective under `w`; higher is better. */
@@ -191,26 +217,67 @@ export function evalState(state: GameState, me: 1 | 2, w: Weights = DEFAULT_WEIG
     return WIN * sign + 0.01 * marginFeature(mine, opp);
   }
 
-  return w.colorLead      * colorLeadFeature(mine, opp)
-    +    w.margin         * marginFeature(mine, opp)
-    +    w.pokerRealized  * pokerRealizedMargin(state, me)
-    +    w.buildPotential * buildFeature(state, me);
+  const poker = pokerEstimate(state, me);
+  return w.colorLead         * colorLeadFeature(mine, opp)
+    +    w.margin            * marginFeature(mine, opp)
+    +    w.pokerRealized     * poker.winMargin     // expected lanes won
+    +    w.buildPotential    * poker.pointMargin   // expected poker points
+    +    (w.dualFocus ?? 0)  * dualFocusFeature(mine, opp);
 }
 
-// ── Move choice ───────────────────────────────────────────────────────────────
+// ── Move choice (minimax) ───────────────────────────────────────────────────────
 
-/** The best legal move for `player` under `w`, or null if none exists. */
-export function chooseMove(state: GameState, player: 1 | 2, w: Weights = DEFAULT_WEIGHTS): Action | null {
+/** Plies of lookahead: 2 = my move + the opponent's best reply. */
+export const SEARCH_DEPTH = 2;
+
+/**
+ * Alpha-beta minimax scored from `me`'s fixed perspective. Nodes alternate max/min
+ * by whose turn it is (`state.currentPlayer`) — the trick flow drives that, since
+ * the leader, follower, and next-trick leader aren't a simple strict alternation.
+ */
+function search(state: GameState, me: 1 | 2, depth: number, alpha: number, beta: number, w: Weights): number {
+  if (depth === 0 || state.phase === 'game-over') return evalState(state, me, w);
+  const player = state.currentPlayer;
+  const moves = legalMoves(state, player);
+  if (moves.length === 0) return evalState(state, me, w);
+
+  const maximizing = player === me;
+  let best = maximizing ? -Infinity : Infinity;
+  for (const move of moves) {
+    const res = applyAction(state, player, move);
+    if (res.error) continue;
+    const v = search(res.state, me, depth - 1, alpha, beta, w);
+    if (maximizing) {
+      if (v > best) best = v;
+      if (best > alpha) alpha = best;
+    } else {
+      if (v < best) best = v;
+      if (best < beta) beta = best;
+    }
+    if (beta <= alpha) break;  // prune
+  }
+  return best;
+}
+
+/** The best legal move for `player` under `w`, searching `depth` plies ahead. */
+export function chooseMove(
+  state: GameState,
+  player: 1 | 2,
+  w: Weights = DEFAULT_WEIGHTS,
+  depth: number = SEARCH_DEPTH,
+): Action | null {
   let best: Action | null = null;
   let bestScore = -Infinity;
+  let alpha = -Infinity;
   for (const move of legalMoves(state, player)) {
     const res = applyAction(state, player, move);
     if (res.error) continue;
-    const score = evalState(res.state, player, w);
+    const score = search(res.state, player, depth - 1, alpha, Infinity, w);
     if (score > bestScore) {
       bestScore = score;
       best = move;
     }
+    if (bestScore > alpha) alpha = bestScore;
   }
   return best;
 }

@@ -8,22 +8,29 @@ const SUIT_SYMBOL: Record<string, string> = {
   blue:   '♦',
 };
 
-// Deeper palette for the flat (unlit) 3D card faces, so white text has strong
-// contrast against the background.
-const SUIT_BG: Record<string, string> = {
-  red:    '#a82020',
-  green:  '#1f6b40',
-  yellow: '#9a6a12',
-  blue:   '#1f4fa8',
+// Light / dark shade palettes per colour (deeper than the 2D card for unlit 3D, so
+// white text keeps contrast). faces[0] is the light face, faces[1] the dark one.
+const LIGHT_BG: Record<string, string> = {
+  red:    '#c85a5a',
+  green:  '#3d8a62',
+  yellow: '#c79a3a',
+  blue:   '#4a78c8',
+};
+const DARK_BG: Record<string, string> = {
+  red:    '#6e1818',
+  green:  '#14402a',
+  yellow: '#6e4a0c',
+  blue:   '#163576',
 };
 
 /**
- * Renders a dual-sided card onto a canvas and returns a CanvasTexture. The active
- * (up) face fills the upper region, the inactive (down) face the lower, split by a
- * shallow (~30°) diagonal running low-left → high-right — matching the 2D hand card.
+ * Renders a card onto a canvas and returns a CanvasTexture. The active (up) face
+ * fills the upper region, the inactive (down) face the lower, split by a shallow
+ * diagonal. Each region is tinted by its shade — `upIsLight` says whether the up
+ * face is the light one (so the down face is the opposite shade).
  * Caller is responsible for calling texture.dispose() when done.
  */
-export function createCardTexture(up: Face, down: Face): THREE.CanvasTexture {
+export function createCardTexture(up: Face, down: Face, upIsLight: boolean): THREE.CanvasTexture {
   const W = 128;
   const H = 180;
   // Seam crosses the left edge at 70% height and the right edge at 30%.
@@ -58,8 +65,8 @@ export function createCardTexture(up: Face, down: Face): THREE.CanvasTexture {
     ctx.shadowOffsetY = 0;
   }
 
-  // Draw one triangular half filled with its colour + a corner label.
-  function half(face: Face, region: [number, number][], corner: 'tl' | 'br') {
+  // Draw one triangular half filled with its shade colour + a corner label.
+  function half(face: Face, region: [number, number][], corner: 'tl' | 'br', bg: string) {
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(region[0][0], region[0][1]);
@@ -67,7 +74,7 @@ export function createCardTexture(up: Face, down: Face): THREE.CanvasTexture {
     ctx.closePath();
     ctx.clip();
 
-    ctx.fillStyle = SUIT_BG[face.suit];
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
     // Corner label: value + suit symbol
@@ -99,8 +106,11 @@ export function createCardTexture(up: Face, down: Face): THREE.CanvasTexture {
   }
 
   // Active (up) face: upper region; Inactive (down): lower region. GAP leaves a seam.
-  half(up,   [[0, 0], [W, 0], [W, yR - GAP], [0, yL - GAP]], 'tl');
-  half(down, [[0, yL + GAP], [W, yR + GAP], [W, H], [0, H]], 'br');
+  // Tint each by its shade (up is light/dark per `upIsLight`; down is the opposite).
+  const upBg   = (upIsLight ? LIGHT_BG : DARK_BG)[up.suit];
+  const downBg = (upIsLight ? DARK_BG : LIGHT_BG)[down.suit];
+  half(up,   [[0, 0], [W, 0], [W, yR - GAP], [0, yL - GAP]], 'tl', upBg);
+  half(down, [[0, yL + GAP], [W, yR + GAP], [W, H], [0, H]], 'br', downBg);
 
   ctx.restore();
 

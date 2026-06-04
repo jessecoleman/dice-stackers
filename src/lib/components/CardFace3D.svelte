@@ -9,6 +9,7 @@
   let {
     up,
     down,
+    upIsLight = true,
     width,
     depth,
     surfaceY,
@@ -21,6 +22,7 @@
   }: {
     up: Face;
     down: Face;
+    upIsLight?: boolean;
     width: number;
     depth: number;
     surfaceY: number;
@@ -33,7 +35,7 @@
   let texture = $state<THREE.CanvasTexture | null>(null);
 
   $effect(() => {
-    const t = createCardTexture(up, down);
+    const t = createCardTexture(up, down, upIsLight);
     texture = t;
     return () => { t.dispose(); };
   });

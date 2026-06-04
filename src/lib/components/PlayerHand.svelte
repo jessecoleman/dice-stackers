@@ -62,8 +62,10 @@
     {#if isActive}<span class="turn-dot"></span>{/if}
     {#if isActive && player === gameStore.seat}
       <span class="phase-tag">{gameStore.isLeading ? 'Lead' : 'Follow'}</span>
-      {#if gameStore.selectedCard}
-        <button class="flip-btn" onclick={() => gameStore.flipSelected()} title="Flip which face is active">⤺ Flip</button>
+      {#if gameStore.isLeading}
+        <button class="flip-btn" onclick={() => gameStore.flipSelected()} title="Preview your light / dark values">⤺ {gameStore.handShade === 0 ? 'Light' : 'Dark'}</button>
+      {:else}
+        <span class="phase-tag">{gameStore.handShade === 0 ? 'Light' : 'Dark'}</span>
       {/if}
     {/if}
     {#if !showBacks}
@@ -85,7 +87,7 @@
       >
         <Card
           {card}
-          orientation={isSel ? gameStore.selectedOrientation : 0}
+          orientation={gameStore.handShade}
           faceDown={showBacks}
           selected={isSel}
           onplay={handleSelect}

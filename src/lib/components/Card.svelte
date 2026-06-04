@@ -22,11 +22,18 @@
     blue:   '♦',
   };
 
-  const suitColor: Record<string, string> = {
-    red:    '#e53e3e',
-    green:  '#38a169',
-    yellow: '#d69e2e',
-    blue:   '#3b82f6',
+  // faces[0] is the LIGHT face, faces[1] the DARK face (same colour, different value).
+  const lightColor: Record<string, string> = {
+    red:    '#e07a7a',
+    green:  '#5cb88a',
+    yellow: '#e3c069',
+    blue:   '#74a6f0',
+  };
+  const darkColor: Record<string, string> = {
+    red:    '#7a1c1c',
+    green:  '#16472e',
+    yellow: '#7d6410',
+    blue:   '#1c3c84',
   };
 
 </script>
@@ -58,10 +65,10 @@
          the whole card 180° on Z, swapping which end is active/upright. -->
     <div class="spinner" style="transform: rotate({orientation === 1 ? 180 : 0}deg)">
       <div class="card-face">
-        <div class="half up" style="background: {suitColor[card.faces[0].suit]}">
+        <div class="half up" style="background: {lightColor[card.faces[0].suit]}">
           <span class="corner up-corner">{@render label(card.faces[0])}</span>
         </div>
-        <div class="half down" style="background: {suitColor[card.faces[1].suit]}">
+        <div class="half down" style="background: {darkColor[card.faces[1].suit]}">
           <span class="corner down-corner">{@render label(card.faces[1])}</span>
         </div>
       </div>

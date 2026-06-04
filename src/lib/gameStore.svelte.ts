@@ -2,6 +2,7 @@ import {
   suits,
   isValidLead,
   isValidFollow,
+  orientationFor,
   stackHasRoom,
   slotKey,
   edgeFor,
@@ -44,7 +45,8 @@ type HoverHighlight =
 
 function createGameStore() {
   let serverState = $state<GameState | null>(null);
-  let selectedCard = $state<{ player: 1 | 2; card: Card; orientation: Orientation } | null>(null);
+  let selectedCard = $state<{ player: 1 | 2; card: Card } | null>(null);
+  let leadPreviewShade = $state<Orientation>(0);   // 0 = light, 1 = dark — leader's manual preview
   let roomId = $state<string | null>(null);
   let seat = $state<1 | 2 | null>(null);
   let hoverHighlight = $state<HoverHighlight>(null);
@@ -157,17 +159,21 @@ function createGameStore() {
 
     selectCard(player: 1 | 2, card: Card) {
       if (player !== serverState?.currentPlayer) return;
-      // Toggle off if re-clicking the same card; default orientation 0 on select.
-      selectedCard = selectedCard?.card.id === card.id ? null : { player, card, orientation: 0 };
+      selectedCard = selectedCard?.card.id === card.id ? null : { player, card };
     },
 
-    /** Currently-chosen face of the selected card (which side is up). */
-    get selectedOrientation(): Orientation { return selectedCard?.orientation ?? 0; },
-
-    /** Flip which face of the selected card is up. */
-    flipSelected() {
-      if (selectedCard) selectedCard = { ...selectedCard, orientation: selectedCard.orientation === 0 ? 1 : 0 };
+    /** Shade the hand displays (0 light, 1 dark). While following it's forced to the
+     *  opposite axis's shade; while leading it follows the manual preview toggle. */
+    get handShade(): Orientation {
+      if (serverState?.trick) {
+        const followAxis: Axis = serverState.trick.axis === 'row' ? 'col' : 'row';
+        return orientationFor(followAxis);
+      }
+      return leadPreviewShade;
     },
+
+    /** Toggle the leader's light/dark preview (no effect while following). */
+    flipSelected() { leadPreviewShade = leadPreviewShade === 0 ? 1 : 0; },
 
     deselectCard() {
       selectedCard = null;
@@ -175,12 +181,11 @@ function createGameStore() {
 
     // ── Validation helpers (pure, use server state) ─────────────────────────
 
-    /** Can the selected card (at its chosen orientation) legally be played into this axis-stack? */
+    /** Can the selected card legally be played into this axis-stack? */
     canPlayToStack(axis: Axis, line: 0 | 1 | 2): boolean {
       if (!selectedCard || !serverState) return false;
-      const { card, orientation } = selectedCard;
       return serverState.trick
-        ? isValidFollow(serverState, card, orientation, axis, line)
+        ? isValidFollow(serverState, axis, line)
         : isValidLead(serverState, axis, line);
     },
 
@@ -197,12 +202,12 @@ function createGameStore() {
 
     // ── Actions (send to server) ────────────────────────────────────────────
 
-    /** Play the selected card (at its chosen orientation) into an axis-stack. */
+    /** Play the selected card into an axis-stack (shade/value set by the edge). */
     async playCard(axis: Axis, line: 0 | 1 | 2) {
       if (!selectedCard) return;
-      const { card, orientation } = selectedCard;
+      const { card } = selectedCard;
       selectedCard = null;
-      await sendAction({ type: 'PLAY_CARD', card, orientation, axis, line });
+      await sendAction({ type: 'PLAY_CARD', card, axis, line });
     },
 
     /** Save the seated player's display name to the server. */

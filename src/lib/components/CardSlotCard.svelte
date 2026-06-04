@@ -73,6 +73,7 @@
   <CardFace3D
     {up}
     {down}
+    upIsLight={card.orientation === 0}
     width={isHorizEdge ? cardW : cardD}
     depth={isHorizEdge ? cardD : cardW}
     surfaceY={cardH / 2}

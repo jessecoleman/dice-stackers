@@ -139,9 +139,21 @@
 
   const dispPool1 = $derived(displayedPool(1));
   const dispPool2 = $derived(displayedPool(2));
-  const dispRows1 = $derived(suits.map(suit => ({ suit, points: dispPool1[suit] })));
-  const dispRows2 = $derived(suits.map(suit => ({ suit, points: dispPool2[suit] })));
   const dispColorsWon = $derived(colorWins(dispPool1, dispPool2));
+
+  // Per-colour dice vs card (poker) breakdown. Dice = final pool minus all poker
+  // (fixed); cards = poker revealed so far = displayed pool minus dice (animates).
+  const subPools = (a: ColorPoints, b: ColorPoints): ColorPoints =>
+    ({ red: a.red - b.red, green: a.green - b.green, blue: a.blue - b.blue });
+  function pokerPoolOf(p: 1 | 2): ColorPoints {
+    const acc: ColorPoints = { red: 0, green: 0, blue: 0 };
+    for (const lane of lanes) if (lane.winner === p) for (const s of suits) acc[s] += lane.points[s];
+    return acc;
+  }
+  const dicePool1 = $derived(subPools(gameStore.scoreOf(1), pokerPoolOf(1)));
+  const dicePool2 = $derived(subPools(gameStore.scoreOf(2), pokerPoolOf(2)));
+  const cardsPool1 = $derived(subPools(dispPool1, dicePool1));
+  const cardsPool2 = $derived(subPools(dispPool2, dicePool2));
 
   /** Nonzero per-colour awards for a lane, for the verdict badges. */
   function laneAward(lane: PokerLane) {
@@ -329,7 +341,7 @@
       </span>
       <span class="follow-sep">·</span>
       <span class="follow-instr">
-        Respond with a <strong>non-{lead.suit}</strong> face, into a <strong>{followAxis}</strong>
+        Respond into a <strong>{followAxis}</strong> (any card — its value is the {followAxis === 'column' ? 'light' : 'dark'} side)
       </span>
     </div>
   {/if}
@@ -371,7 +383,9 @@
           <!-- Score tables side by side (totals climb as lanes are scored) -->
           <div class="result-tables">
             {#each ([1, 2] as const) as p}
-              {@const rows = p === 1 ? dispRows1 : dispRows2}
+              {@const dice = p === 1 ? dicePool1 : dicePool2}
+              {@const cards = p === 1 ? cardsPool1 : cardsPool2}
+              {@const total = p === 1 ? dispPool1 : dispPool2}
               {@const colorsWon = p === 1 ? dispColorsWon.p1 : dispColorsWon.p2}
               <div class="result-table-wrap" class:result-winner-col={winner === p}>
                 <div class="result-table-name">{gameStore.playerName(p)}</div>
@@ -379,20 +393,24 @@
                   <thead>
                     <tr>
                       <th></th>
-                      <th>Points</th>
+                      <th>Dice</th>
+                      <th>Cards</th>
+                      <th>Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {#each rows as row}
-                      <tr class:leads={colorLeader(dispPool1, dispPool2, row.suit) === p}>
-                        <td class="suit" style="color:{SUIT_COLOR[row.suit]}">{SUIT_SYMBOL[row.suit]}</td>
-                        <td class="pts">{row.points}</td>
+                    {#each suits as suit}
+                      <tr class:leads={colorLeader(dispPool1, dispPool2, suit) === p}>
+                        <td class="suit" style="color:{SUIT_COLOR[suit]}">{SUIT_SYMBOL[suit]}</td>
+                        <td class="pts">{dice[suit]}</td>
+                        <td class="pts">{cards[suit]}</td>
+                        <td class="pts total-col">{total[suit]}</td>
                       </tr>
                     {/each}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td class="total-label">colors</td>
+                      <td class="total-label" colspan="3">colors won</td>
                       <td class="total-pts">{colorsWon}</td>
                     </tr>
                   </tfoot>
@@ -901,6 +919,7 @@
 
   .result-winner-col .result-table-name { color: #ffd700; }
 
+
   .result-table {
     border-collapse: collapse;
     width: 100%;
@@ -927,9 +946,10 @@
   .result-table th:first-child { text-align: left; }
 
   .result-table .suit { font-size: 13px; }
-  .result-table .pts  { font-weight: 600; color: #ccc; }
+  .result-table .pts  { font-weight: 600; color: #999; }
+  .result-table .total-col { color: #ddd; font-weight: 700; }
   /* A colour this player currently leads (counts toward their majority). */
-  .result-table .leads .pts  { color: #ffd700; }
+  .result-table .leads .total-col { color: #ffd700; }
   .result-table .leads .suit { font-weight: 700; }
 
   .result-table tfoot tr { border-top: 1px solid rgba(255,255,255,0.1); }

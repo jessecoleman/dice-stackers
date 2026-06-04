@@ -25,38 +25,37 @@
 
     <section>
       <h3>Colors &amp; Cards</h3>
-      <p>Three suits — <strong>Red</strong>, <strong>Green</strong>, <strong>Blue</strong> — form a rock-paper-scissors cycle: <strong>Red beats Green, Green beats Blue, Blue beats Red</strong>. No color is strongest overall.</p>
-      <p>Every card is <strong>dual-sided</strong> with a <strong>split</strong> value: a high face in one color against a low face in another (the two add to 7), cycling so high red sits opposite low blue, high blue opposite low green, and high green opposite low red. When you play a card you choose which face is up — picking both its suit <em>and</em> its value.</p>
+      <p>Three colors — <strong>Red</strong>, <strong>Green</strong>, <strong>Blue</strong> — used for scoring and poker; none beats another. Each card is a <strong>single color</strong> with two values: a <strong>light</strong> value and a <strong>dark</strong> value. Dark values run high, light values run low.</p>
     </section>
 
     <section>
-      <h3>Your Edges</h3>
+      <h3>Your Edges &amp; Shade</h3>
       <p>Each player owns two edges, holding six card stacks in all:</p>
       <ul>
         <li><strong>Player 1</strong> — bottom &amp; right edges</li>
         <li><strong>Player 2</strong> — top &amp; left edges</li>
       </ul>
-      <p>Each edge has <strong>3 stacks</strong> (one per row or column), each holding up to 3 cards. These stacks become your <strong>poker hands</strong> at the end.</p>
+      <p>Each edge has <strong>3 stacks</strong> (one per row or column), holding up to 3 cards — these become your <strong>poker hands</strong>. The edge sets the shade: <strong>row stacks (left/right) are dark, column stacks (top/bottom) are light</strong>. So <em>where</em> you play a card picks which value is live — a row plays its <strong>dark</strong> value, a column its <strong>light</strong> value. There's no flipping a single card; the lane decides.</p>
     </section>
 
     <section>
-      <h3>Hands &amp; Even Fill</h3>
-      <p>You play <strong>2 hands of 9 cards</strong> over the game. Stacks must <strong>fill evenly</strong>: every one of your six lanes (3 rows + 3 columns) must reach height 1 before any reaches 2, and 2 before any reaches 3. So a lane is open only when it's at the current fill level — you can't load up one stack early.</p>
+      <h3>Hands</h3>
+      <p>You hold <strong>6 cards</strong>, play them out, then draw a fresh 6 — <strong>three hands</strong> over the game. Play into any of your stacks that still has room (up to 3 cards each).</p>
     </section>
 
     <section>
       <h3>Leading a Trick</h3>
-      <p>The leader plays a card into one of their own stacks on a chosen <strong>row</strong> or <strong>column</strong> that's still open under even-fill, choosing which color is up — this sets the <strong>led suit</strong> and value. <em>No die is placed when leading.</em></p>
+      <p>The leader plays a card into a stack on a chosen <strong>row</strong> or <strong>column</strong> — the edge sets the shade (row = dark value, column = light value), and that value is the one to beat. Use the <strong>Light / Dark</strong> toggle to preview your values before committing. <em>No die is placed when leading.</em></p>
     </section>
 
     <section>
       <h3>Following</h3>
-      <p>The follower responds in one of their own stacks on the <strong>opposite axis</strong> (leader played a row → follower plays a column, and vice-versa) that's still open under even-fill. Key rule — <strong>you must NOT follow the led suit</strong>: the color you play up must differ from the led color. (Your card's second color always makes this possible.)</p>
+      <p>The follower plays into a stack on the <strong>opposite axis</strong> (leader played a row → follower plays a column), so the <strong>opposite shade</strong> — your hand flips to it automatically. <strong>Any card is legal</strong> — there's no suit to match.</p>
     </section>
 
     <section>
       <h3>Winning the Trick</h3>
-      <p>The <strong>higher value</strong> wins. On a tie, rock-paper-scissors breaks it (e.g. Red vs Blue → <strong>Blue</strong>, since Blue beats Red). The winner leads the next trick. When your hand runs out, you draw a fresh one.</p>
+      <p>The <strong>higher value</strong> wins, and the <strong>follower wins ties</strong> (equal values go to the responder). The winner leads the next trick.</p>
     </section>
 
     <section>
@@ -70,7 +69,7 @@
       <p><strong>Dice (during play)</strong> — the loser scores the die they place, in the die's color:</p>
       <div class="formula">die value × stack height</div>
       <p class="example">A 6 landing on the second level of a stack → 6 × 2 = <strong>12 pts</strong> in that color.</p>
-      <p><strong>Poker (at the end)</strong> — each of your 6 edge lanes is compared to the opposing stack as a 3-card hand (straight flush &gt; three of a kind &gt; straight &gt; flush &gt; pair &gt; high card; ties broken by RPS). Win a lane to score <strong>each card's value</strong> in its own color (e.g. 5♥ 3♥ 2♣ → +8 red, +2 green).</p>
+      <p><strong>Poker (at the end)</strong> — each of your 6 edge lanes is compared to the opposing stack as a 3-card hand (straight flush &gt; three of a kind &gt; straight &gt; flush &gt; pair &gt; high card; an exact tie scores for neither). Win a lane to score <strong>each card's value</strong> in its own color (e.g. 5♥ 3♥ 2♣ → +8 red, +2 green).</p>
       <p>To win, compare pools <strong>color by color</strong> and take the <strong>majority — lead 2 of the 3 colors</strong>:</p>
       <div class="formula">win = lead 2 of 3 colors</div>
       <p>If neither player leads two colors, the tie goes to whoever has the larger <strong>second-highest</strong> color total. Spread your points — winning one color big but losing the other two loses the game.</p>
@@ -86,7 +85,7 @@
       <ul class="tips">
         <li><strong>Losing a trick scores the points.</strong> The loser places the die and banks value × height, so deliberately losing — especially a high die onto a tall stack in a color you're short on — is often the right play.</li>
         <li><strong>Fight for two colors.</strong> You win by leading 2 of the 3 colors, so contest the color matchups you can flip rather than running up a single color you already lead.</li>
-        <li><strong>Each face is a trade-off.</strong> A card's two faces split a high value in one color against a low value in another — orientation picks both the suit and the value you commit, for the trick, the die's color, and your poker hands.</li>
+        <li><strong>The lane picks the value.</strong> A card plays its high <em>dark</em> value on a row, its low <em>light</em> value on a column — so choosing where to play chooses the value you spend and the hand you build. Lead dark to win tempo, light to bait the opponent high.</li>
         <li><strong>Watch the intersection.</strong> The die lands where the two stacks cross, and a color already sitting there blocks it (no die, no points) — handy for denying the opponent.</li>
       </ul>
     </section>

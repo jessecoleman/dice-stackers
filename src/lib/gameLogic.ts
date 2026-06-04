@@ -113,12 +113,14 @@ export interface GameState {
   updatedAt: number;
 }
 
+// Orientation (which value is live) is derived from the axis, not chosen: a card
+// played on a col lane shows its LIGHT face, on a row lane its DARK face.
 export type Action =
-  | { type: 'PLAY_CARD'; card: Card; orientation: Orientation; axis: Axis; line: 0 | 1 | 2 };
+  | { type: 'PLAY_CARD'; card: Card; axis: Axis; line: 0 | 1 | 2 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const HAND_SIZE = 9;            // 2 hands of 9 dealt over the game (18 cards/player)
+const HAND_SIZE = 6;            // 3 hands of 6, played out then refilled (no per-turn redraw)
 const ALL_EDGES: Edge[] = ['top', 'bottom', 'left', 'right'];
 const LINES = [0, 1, 2] as const;
 
@@ -130,7 +132,7 @@ const LINES = [0, 1, 2] as const;
  *   3 = free (no even-fill; any lane with room)
  * Tunable knob for balancing tempo/planning vs front-loading (see docs/balance-analysis.md).
  */
-let evenFillSlack = 0;
+let evenFillSlack = 3;  // alt-scoring: free fill — any lane with room (no even-fill restriction)
 export function setEvenFillSlack(n: number): void { evenFillSlack = n; }
 export function getEvenFillSlack(): number { return evenFillSlack; }
 
@@ -196,29 +198,27 @@ export function gameWinner(p1: ColorPoints, p2: ColorPoints): 1 | 2 | null {
   return null;
 }
 
-// Deck: 3 colour pairings × 3 split values × 4 copies = 36 cards (9 unique combos).
-// Each card splits a high "strong" face against a low "weak" face (the two sum to 7),
-// cycling so high reds sit opposite low blues, high blues opposite low greens, and
-// high greens opposite low reds.
-const SKEW_PAIRS: [number, number][] = [[6, 1], [5, 2], [4, 3]];  // [strong, weak]
-const PAIRINGS: { strong: Suit; weak: Suit }[] = [
-  { strong: 'red',   weak: 'blue'  },  // high R ↔ low B
-  { strong: 'blue',  weak: 'green' },  // high B ↔ low G
-  { strong: 'green', weak: 'red'   },  // high G ↔ low R
+// Deck: 3 colours × 6 light/dark value pairs × 2 copies = 36 cards. Each card is one
+// colour with a LIGHT face (faces[0]) and a DARK face (faces[1]); the value played is
+// the light one on a col lane, the dark one on a row lane. Dark skews high / light low
+// with deliberate overlap (~22% of light-vs-dark tricks are upsets).
+const SHADE_PAIRS: [number, number][] = [  // [light, dark]
+  [1, 6], [2, 5], [3, 4], [3, 4], [4, 3], [5, 2],
 ];
-const COPIES = ['a', 'b', 'c', 'd'] as const;  // 4 copies → 36 cards
+const COLORS: Suit[] = ['red', 'green', 'blue'];
+const COPIES = ['a', 'b'] as const;  // 2 copies → 36 cards
 
 function buildDeck(): Card[] {
   const cards: Card[] = [];
-  for (const { strong, weak } of PAIRINGS) {
-    for (const [sv, wv] of SKEW_PAIRS) {
+  for (const color of COLORS) {
+    SHADE_PAIRS.forEach(([light, dark], i) => {
       for (const copy of COPIES) {
         cards.push({
-          id: `${strong}${sv}-${weak}${wv}-${copy}`,
-          faces: [{ suit: strong, value: sv }, { suit: weak, value: wv }],
+          id: `${color}-${i}${copy}`,
+          faces: [{ suit: color, value: light }, { suit: color, value: dark }],
         });
       }
-    }
+    });
   }
   return cards;
 }
@@ -313,11 +313,9 @@ export function isBoardFull(cardSlots: Record<string, PlacedCard[]>): boolean {
   return ALL_EDGES.every(edge => LINES.every(i => (cardSlots[slotKey(edge, i)] ?? []).length === 3));
 }
 
-/** Who wins a trick given the lead and the follower's up-face (their suits always differ). */
+/** Who wins a trick: the follower wins on a higher OR equal value (ties go to the follower). */
 function followerWinsTrick(lead: TrickLead, followFace: Face): boolean {
-  if (followFace.value > lead.value) return true;
-  if (followFace.value < lead.value) return false;
-  return beats(followFace.suit, lead.suit);
+  return followFace.value >= lead.value;
 }
 
 /** A die may enter a cell only if no die of that colour is already there (caps height at 3). */
@@ -340,29 +338,24 @@ export function isValidLead(state: GameState, axis: Axis, line: 0 | 1 | 2): bool
 }
 
 /**
- * Validate a follow. The follower must play on the axis opposite the lead, into
- * their own stack with room, with an up-face whose colour is NOT the led suit
- * (must-NOT-follow). Whether a die can then be placed doesn't affect legality.
+ * Validate a follow: the follower plays on the axis opposite the lead, into their
+ * own stack with room. No suit/orientation constraint — the shade (hence value) is
+ * forced by the axis, and any card is legal.
  */
-export function isValidFollow(
-  state: GameState,
-  card: Card,
-  orientation: Orientation,
-  axis: Axis,
-  line: 0 | 1 | 2
-): boolean {
+export function isValidFollow(state: GameState, axis: Axis, line: 0 | 1 | 2): boolean {
   const lead = state.trick;
   if (!lead) return false;
-  const follower = state.currentPlayer;
   const followAxis: Axis = lead.axis === 'row' ? 'col' : 'row';
   if (axis !== followAxis) return false;
-  if (!stackHasRoom(state, follower, axis, line)) return false;
-  // Must-NOT-follow: the up-face colour must differ from the led suit.
-  if (card.faces[orientation].suit === lead.suit) return false;
-  return true;
+  return stackHasRoom(state, state.currentPlayer, axis, line);
 }
 
-/** Draw a fresh hand of 9, but only once the previous one is fully played out. */
+/** Which face is live for an axis: col → light (faces[0]), row → dark (faces[1]). */
+export function orientationFor(axis: Axis): Orientation {
+  return axis === 'col' ? 0 : 1;
+}
+
+/** Draw a fresh hand of HAND_SIZE, but only once the previous one is fully played out. */
 function refillIfEmpty(state: GameState, player: 1 | 2): void {
   const hand = handOf(state, player);
   if (hand.length > 0) return;
@@ -404,7 +397,7 @@ export function evaluateHand(faces: Face[]): HandRank {
   return { cat, ranks, hiSuit: sorted[0].suit };
 }
 
-/** Compare two 3-card hands: +1 a wins, −1 b wins, 0 true tie. RPS breaks rank ties. */
+/** Compare two 3-card hands: +1 a wins, −1 b wins, 0 tie (equal category+ranks → neither scores). */
 export function compareHands(a: HandRank, b: HandRank): number {
   if (a.cat !== b.cat) return a.cat > b.cat ? 1 : -1;
   const len = Math.max(a.ranks.length, b.ranks.length);
@@ -412,10 +405,7 @@ export function compareHands(a: HandRank, b: HandRank): number {
     const av = a.ranks[i] ?? 0, bv = b.ranks[i] ?? 0;
     if (av !== bv) return av > bv ? 1 : -1;
   }
-  // Identical categories and ranks → break by RPS on the highest card's colour.
-  if (beats(a.hiSuit, b.hiSuit)) return 1;
-  if (beats(b.hiSuit, a.hiSuit)) return -1;
-  return 0;
+  return 0;  // identical category + ranks → tie, neither player scores the lane
 }
 
 export type LaneId = 'R0' | 'R1' | 'R2' | 'C0' | 'C1' | 'C2';
@@ -492,7 +482,8 @@ export function applyAction(
   if (action.type !== 'PLAY_CARD') return { state, error: 'Unknown action' };
 
   const s = structuredClone(state);
-  const { card, orientation, axis, line } = action;
+  const { card, axis, line } = action;
+  const orientation = orientationFor(axis);   // shade (hence value) is set by the axis
   const hand = handOf(s, player);
   const idx = hand.findIndex(c => c.id === card.id);
   if (idx === -1) return { state, error: 'Card not in hand' };
@@ -515,7 +506,7 @@ export function applyAction(
 
   // ── Following the trick ────────────────────────────────────────────────────
   const lead = s.trick;
-  if (!isValidFollow(s, card, orientation, axis, line)) return { state, error: 'Invalid follow play' };
+  if (!isValidFollow(s, axis, line)) return { state, error: 'Invalid follow play' };
   hand.splice(idx, 1);
   s.cardSlots[slotKey(edgeFor(player, axis), line)].push({ id: card.id, faces: card.faces, orientation });
 
@@ -524,8 +515,8 @@ export function applyAction(
     axis, line, cardSuit: face.suit, cardValue: face.value,
   });
 
-  // Resolve the trick: higher up-face wins; RPS breaks ties (up-face suits always
-  // differ). The winner leads next; the loser places & scores the die.
+  // Resolve the trick: higher up-face value wins, follower takes ties. The winner
+  // leads next; the loser places & scores the die.
   const followerWins = followerWinsTrick(lead, face);
   const winner: 1 | 2 = followerWins ? player : lead.player;
   const loser: 1 | 2 = followerWins ? lead.player : player;
@@ -560,7 +551,7 @@ export function applyAction(
   s.trick = null;
   s.currentPlayer = winner;
 
-  // Each player draws a fresh hand of 9 once their previous one is played out.
+  // Each player draws a fresh hand of 6 once their previous one is played out.
   refillIfEmpty(s, 1);
   refillIfEmpty(s, 2);
 
